@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useAdminDashboard } from '@/hooks/useAdminDashboard';
 import { useProducts } from '@/hooks/useProducts';
 import {
@@ -11,6 +12,8 @@ import {
   ArrowDownRight,
   Loader2,
   RefreshCw,
+  X,
+  PackageX,
 } from 'lucide-react';
 import {
   AreaChart,
@@ -36,8 +39,15 @@ const formatCurrency = (value: number) => {
 const AdminDashboard = () => {
   const { stats, isLoading, error, refetch } = useAdminDashboard();
   const { products } = useProducts();
+  const [showLowStockModal, setShowLowStockModal] = useState(false);
 
-  const lowStockProducts = products.filter((p) => p.stock <= p.min_stock);
+  const lowStockProducts = products
+    .filter((p) => p.stock <= p.min_stock)
+    .sort((a, b) => a.stock - b.stock); // Sort by stock ascending (lowest first)
+  
+  const outOfStockProducts = lowStockProducts.filter((p) => p.stock === 0);
+  const criticalStockProducts = lowStockProducts.filter((p) => p.stock > 0 && p.stock <= p.min_stock / 2);
+  const warningStockProducts = lowStockProducts.filter((p) => p.stock > p.min_stock / 2 && p.stock <= p.min_stock);
 
   if (isLoading || !stats) {
     return (
@@ -253,34 +263,222 @@ const AdminDashboard = () => {
       {/* Low Stock Alert */}
       {lowStockProducts.length > 0 && (
         <div className="stat-card border-warning/50">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 rounded-xl bg-warning/20 flex items-center justify-center">
-              <AlertTriangle className="w-5 h-5 text-warning" />
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-warning/20 flex items-center justify-center">
+                <AlertTriangle className="w-5 h-5 text-warning" />
+              </div>
+              <div>
+                <h3 className="font-semibold">Peringatan Stok Menipis</h3>
+                <p className="text-sm text-muted-foreground">
+                  {outOfStockProducts.length > 0 && (
+                    <span className="text-destructive font-medium">{outOfStockProducts.length} habis</span>
+                  )}
+                  {outOfStockProducts.length > 0 && (criticalStockProducts.length > 0 || warningStockProducts.length > 0) && ' • '}
+                  {criticalStockProducts.length > 0 && (
+                    <span className="text-warning font-medium">{criticalStockProducts.length} kritis</span>
+                  )}
+                  {criticalStockProducts.length > 0 && warningStockProducts.length > 0 && ' • '}
+                  {warningStockProducts.length > 0 && (
+                    <span className="text-yellow-500 font-medium">{warningStockProducts.length} menipis</span>
+                  )}
+                </p>
+              </div>
             </div>
-            <div>
-              <h3 className="font-semibold">Peringatan Stok Menipis</h3>
-              <p className="text-sm text-muted-foreground">
-                {lowStockProducts.length} produk perlu restock segera
-              </p>
+            <button
+              onClick={() => setShowLowStockModal(true)}
+              className="px-4 py-2 text-sm font-medium rounded-lg bg-warning/20 text-warning hover:bg-warning/30 transition-colors"
+            >
+              Lihat Semua ({lowStockProducts.length})
+            </button>
+          </div>
+          
+          {/* Quick Summary Cards */}
+          <div className="grid grid-cols-3 gap-3 mb-4">
+            <div className="p-3 rounded-xl bg-destructive/10 border border-destructive/20">
+              <div className="flex items-center gap-2 mb-1">
+                <PackageX className="w-4 h-4 text-destructive" />
+                <span className="text-xs font-medium text-destructive">Stok Habis</span>
+              </div>
+              <p className="text-2xl font-bold text-destructive">{outOfStockProducts.length}</p>
+            </div>
+            <div className="p-3 rounded-xl bg-warning/10 border border-warning/20">
+              <div className="flex items-center gap-2 mb-1">
+                <AlertTriangle className="w-4 h-4 text-warning" />
+                <span className="text-xs font-medium text-warning">Kritis</span>
+              </div>
+              <p className="text-2xl font-bold text-warning">{criticalStockProducts.length}</p>
+            </div>
+            <div className="p-3 rounded-xl bg-yellow-500/10 border border-yellow-500/20">
+              <div className="flex items-center gap-2 mb-1">
+                <Package className="w-4 h-4 text-yellow-500" />
+                <span className="text-xs font-medium text-yellow-500">Menipis</span>
+              </div>
+              <p className="text-2xl font-bold text-yellow-500">{warningStockProducts.length}</p>
             </div>
           </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {lowStockProducts.slice(0, 6).map((product) => (
               <div
                 key={product.id}
-                className="p-3 rounded-xl bg-muted/30 flex items-center gap-3"
+                className={`p-3 rounded-xl flex items-center gap-3 ${
+                  product.stock === 0 
+                    ? 'bg-destructive/10 border border-destructive/20' 
+                    : product.stock <= product.min_stock / 2
+                    ? 'bg-warning/10 border border-warning/20'
+                    : 'bg-muted/30'
+                }`}
               >
-                <div className="w-10 h-10 rounded-lg bg-warning/20 flex items-center justify-center">
-                  <Package className="w-5 h-5 text-warning" />
+                <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                  product.stock === 0 
+                    ? 'bg-destructive/20' 
+                    : product.stock <= product.min_stock / 2
+                    ? 'bg-warning/20'
+                    : 'bg-yellow-500/20'
+                }`}>
+                  {product.stock === 0 ? (
+                    <PackageX className="w-5 h-5 text-destructive" />
+                  ) : (
+                    <Package className={`w-5 h-5 ${product.stock <= product.min_stock / 2 ? 'text-warning' : 'text-yellow-500'}`} />
+                  )}
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-sm truncate">{product.name}</p>
                   <p className="text-xs text-muted-foreground">
-                    Stok: <span className="text-warning font-medium">{product.stock}</span> / Min: {product.min_stock}
+                    Stok: <span className={`font-medium ${
+                      product.stock === 0 ? 'text-destructive' : product.stock <= product.min_stock / 2 ? 'text-warning' : 'text-yellow-500'
+                    }`}>{product.stock}</span> / Min: {product.min_stock}
                   </p>
                 </div>
               </div>
             ))}
+          </div>
+          
+          {lowStockProducts.length > 6 && (
+            <p className="text-center text-sm text-muted-foreground mt-3">
+              +{lowStockProducts.length - 6} produk lainnya
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Low Stock Modal */}
+      {showLowStockModal && (
+        <div 
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50"
+          onClick={(e) => e.target === e.currentTarget && setShowLowStockModal(false)}
+        >
+          <div className="w-full max-w-4xl max-h-[85vh] bg-card rounded-2xl shadow-2xl border border-border animate-scale-in overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between p-4 sm:p-6 border-b border-border">
+              <div>
+                <h2 className="text-xl font-bold">Ringkasan Stok Menipis</h2>
+                <p className="text-sm text-muted-foreground">{lowStockProducts.length} produk perlu diperhatikan</p>
+              </div>
+              <button
+                onClick={() => setShowLowStockModal(false)}
+                className="p-2 rounded-lg hover:bg-muted transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            {/* Summary Stats */}
+            <div className="grid grid-cols-3 gap-3 p-4 sm:p-6 border-b border-border">
+              <div className="p-4 rounded-xl bg-destructive/10 border border-destructive/20 text-center">
+                <PackageX className="w-8 h-8 mx-auto mb-2 text-destructive" />
+                <p className="text-3xl font-bold text-destructive">{outOfStockProducts.length}</p>
+                <p className="text-sm text-destructive/80">Stok Habis</p>
+              </div>
+              <div className="p-4 rounded-xl bg-warning/10 border border-warning/20 text-center">
+                <AlertTriangle className="w-8 h-8 mx-auto mb-2 text-warning" />
+                <p className="text-3xl font-bold text-warning">{criticalStockProducts.length}</p>
+                <p className="text-sm text-warning/80">Stok Kritis</p>
+              </div>
+              <div className="p-4 rounded-xl bg-yellow-500/10 border border-yellow-500/20 text-center">
+                <Package className="w-8 h-8 mx-auto mb-2 text-yellow-500" />
+                <p className="text-3xl font-bold text-yellow-500">{warningStockProducts.length}</p>
+                <p className="text-sm text-yellow-600/80">Stok Menipis</p>
+              </div>
+            </div>
+
+            {/* Products Table */}
+            <div className="flex-1 overflow-auto p-4 sm:p-6">
+              <table className="w-full">
+                <thead className="sticky top-0 bg-card">
+                  <tr className="border-b border-border">
+                    <th className="px-3 py-3 text-left text-sm font-semibold text-muted-foreground">Produk</th>
+                    <th className="px-3 py-3 text-left text-sm font-semibold text-muted-foreground">Kategori</th>
+                    <th className="px-3 py-3 text-center text-sm font-semibold text-muted-foreground">Stok</th>
+                    <th className="px-3 py-3 text-center text-sm font-semibold text-muted-foreground">Min</th>
+                    <th className="px-3 py-3 text-center text-sm font-semibold text-muted-foreground">Status</th>
+                    <th className="px-3 py-3 text-center text-sm font-semibold text-muted-foreground">Perlu Restock</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {lowStockProducts.map((product) => {
+                    const restockNeeded = Math.max(0, product.min_stock * 2 - product.stock);
+                    const status = product.stock === 0 
+                      ? { label: 'Habis', color: 'text-destructive bg-destructive/10' }
+                      : product.stock <= product.min_stock / 2
+                      ? { label: 'Kritis', color: 'text-warning bg-warning/10' }
+                      : { label: 'Menipis', color: 'text-yellow-500 bg-yellow-500/10' };
+                    
+                    return (
+                      <tr key={product.id} className="border-b border-border/50 hover:bg-muted/30">
+                        <td className="px-3 py-3">
+                          <div className="flex items-center gap-3">
+                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                              product.stock === 0 ? 'bg-destructive/20' : 'bg-muted'
+                            }`}>
+                              {product.stock === 0 ? (
+                                <PackageX className="w-4 h-4 text-destructive" />
+                              ) : (
+                                <Package className="w-4 h-4 text-muted-foreground" />
+                              )}
+                            </div>
+                            <div>
+                              <p className="font-medium text-sm">{product.name}</p>
+                              <p className="text-xs text-muted-foreground">{product.unit}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-3 py-3">
+                          <span className="px-2 py-1 rounded-full text-xs bg-muted text-muted-foreground">
+                            {product.category || 'Lainnya'}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3 text-center">
+                          <span className={`font-bold ${
+                            product.stock === 0 ? 'text-destructive' : product.stock <= product.min_stock / 2 ? 'text-warning' : 'text-yellow-500'
+                          }`}>
+                            {product.stock}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3 text-center text-muted-foreground">
+                          {product.min_stock}
+                        </td>
+                        <td className="px-3 py-3 text-center">
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${status.color}`}>
+                            {status.label}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3 text-center">
+                          <span className="font-semibold text-primary">+{restockNeeded}</span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              
+              {lowStockProducts.length === 0 && (
+                <div className="text-center py-12 text-muted-foreground">
+                  <Package className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                  <p>Semua stok dalam kondisi aman</p>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
