@@ -1,4 +1,4 @@
-import { useDashboardStats } from '@/hooks/useTransactions';
+import { useAdminDashboard } from '@/hooks/useAdminDashboard';
 import { useProducts } from '@/hooks/useProducts';
 import {
   TrendingUp,
@@ -10,6 +10,7 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Loader2,
+  RefreshCw,
 } from 'lucide-react';
 import {
   AreaChart,
@@ -33,7 +34,7 @@ const formatCurrency = (value: number) => {
 };
 
 const AdminDashboard = () => {
-  const { stats, isLoading } = useDashboardStats();
+  const { stats, isLoading, error, refetch } = useAdminDashboard();
   const { products } = useProducts();
 
   const lowStockProducts = products.filter((p) => p.stock <= p.min_stock);
@@ -42,6 +43,22 @@ const AdminDashboard = () => {
     return (
       <div className="flex items-center justify-center h-[50vh]">
         <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        <span className="ml-2 text-muted-foreground">Memuat data...</span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[50vh] gap-4">
+        <p className="text-destructive">{error}</p>
+        <button
+          onClick={refetch}
+          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-primary-foreground"
+        >
+          <RefreshCw className="w-4 h-4" />
+          Coba Lagi
+        </button>
       </div>
     );
   }
@@ -64,12 +81,12 @@ const AdminDashboard = () => {
       color: 'info',
     },
     {
-      title: 'Penjualan Bulan Ini',
-      value: formatCurrency(stats.monthlySales),
-      change: stats.monthlySales > 0 ? '+' : '',
-      trend: 'up',
+      title: 'Saldo Kas',
+      value: formatCurrency(stats.cashBalance),
+      change: stats.cashBalance > 0 ? 'Total' : '',
+      trend: stats.cashBalance >= 0 ? 'up' : 'down',
       icon: Wallet,
-      color: 'success',
+      color: stats.cashBalance >= 0 ? 'success' : 'warning',
     },
     {
       title: 'Stok Menipis',
@@ -88,16 +105,25 @@ const AdminDashboard = () => {
         <div>
           <h1 className="text-2xl lg:text-3xl font-bold">Dashboard Admin</h1>
           <p className="text-muted-foreground">
-            Selamat datang! Berikut ringkasan toko hari ini.
+            Selamat datang! Data real-time dari database.
           </p>
         </div>
-        <div className="text-sm text-muted-foreground">
-          {new Date().toLocaleDateString('id-ID', {
-            weekday: 'long',
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric',
-          })}
+        <div className="flex items-center gap-3">
+          <button
+            onClick={refetch}
+            className="p-2 rounded-lg hover:bg-muted transition-colors"
+            title="Refresh Data"
+          >
+            <RefreshCw className="w-5 h-5 text-muted-foreground" />
+          </button>
+          <div className="text-sm text-muted-foreground">
+            {new Date().toLocaleDateString('id-ID', {
+              weekday: 'long',
+              year: 'numeric',
+              month: 'long',
+              day: 'numeric',
+            })}
+          </div>
         </div>
       </div>
 
@@ -151,7 +177,7 @@ const AdminDashboard = () => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Sales Chart */}
         <div className="lg:col-span-2 stat-card">
-          <h3 className="text-lg font-semibold mb-4">Grafik Penjualan Minggu Ini</h3>
+          <h3 className="text-lg font-semibold mb-4">Grafik Penjualan 7 Hari Terakhir</h3>
           <div className="h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={stats.weeklySales}>

@@ -1,4 +1,4 @@
-import { useTransactionStore } from '@/store/useTransactionStore';
+import { useKasirDashboard } from '@/hooks/useKasirDashboard';
 import { useAuthStore } from '@/store/useAuthStore';
 import { 
   ShoppingCart, 
@@ -9,7 +9,9 @@ import {
   DollarSign,
   CreditCard,
   Wallet,
-  Smartphone
+  Smartphone,
+  Loader2,
+  RefreshCw
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -19,41 +21,53 @@ const formatCurrency = (value: number) => {
 
 const KasirDashboard = () => {
   const { user, currentShift } = useAuthStore();
-  const { getTodayTransactions, getTransactionsByCashier } = useTransactionStore();
+  const { stats, isLoading, error, refetch } = useKasirDashboard();
 
-  const todayTransactions = getTodayTransactions();
-  const myTransactions = user ? getTransactionsByCashier(user.id) : [];
-  
-  const todaySales = todayTransactions.reduce((sum, t) => sum + t.total, 0);
-  const myTodaySales = todayTransactions.filter(t => t.cashierId === user?.id).reduce((sum, t) => sum + t.total, 0);
-  const myTodayTransactionCount = todayTransactions.filter(t => t.cashierId === user?.id).length;
-  
-  // Payment method breakdown
-  const paymentBreakdown = todayTransactions.reduce((acc, t) => {
-    acc[t.paymentMethod] = (acc[t.paymentMethod] || 0) + t.total;
-    return acc;
-  }, {} as Record<string, number>);
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-[50vh]">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        <span className="ml-2 text-muted-foreground">Memuat data...</span>
+      </div>
+    );
+  }
 
-  const recentTransactions = myTransactions.slice(0, 5);
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[50vh] gap-4">
+        <p className="text-destructive">{error}</p>
+        <button
+          onClick={refetch}
+          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-primary-foreground"
+        >
+          <RefreshCw className="w-4 h-4" />
+          Coba Lagi
+        </button>
+      </div>
+    );
+  }
 
-  const stats = [
+  // Calculate total sales from payment breakdown
+  const totalSales = Object.values(stats.paymentBreakdown).reduce((sum, val) => sum + val, 0);
+
+  const statCards = [
     {
       label: 'Penjualan Hari Ini',
-      value: formatCurrency(myTodaySales),
+      value: formatCurrency(stats.todaySales),
       icon: TrendingUp,
       color: 'text-success',
       bgColor: 'bg-success/10',
     },
     {
       label: 'Transaksi Hari Ini',
-      value: myTodayTransactionCount.toString(),
+      value: stats.todayTransactionCount.toString(),
       icon: Receipt,
       color: 'text-primary',
       bgColor: 'bg-primary/10',
     },
     {
       label: 'Rata-rata Transaksi',
-      value: formatCurrency(myTodayTransactionCount > 0 ? myTodaySales / myTodayTransactionCount : 0),
+      value: formatCurrency(stats.avgTransaction),
       icon: DollarSign,
       color: 'text-warning',
       bgColor: 'bg-warning/10',
@@ -70,7 +84,7 @@ const KasirDashboard = () => {
   const paymentMethods = [
     { key: 'cash', label: 'Tunai', icon: Wallet, color: 'text-success' },
     { key: 'qris', label: 'QRIS', icon: Smartphone, color: 'text-primary' },
-    { key: 'transfer', label: 'Transfer', icon: CreditCard, color: 'text-info' },
+    { key: 'bank', label: 'Transfer', icon: CreditCard, color: 'text-info' },
     { key: 'credit', label: 'Kredit', icon: CreditCard, color: 'text-warning' },
   ];
 
@@ -82,18 +96,46 @@ const KasirDashboard = () => {
           <h1 className="text-2xl lg:text-3xl font-bold">Dashboard Kasir</h1>
           <p className="text-muted-foreground">Selamat datang, {user?.name}</p>
         </div>
-        <Link
-          to="/kasir/transaksi"
-          className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-colors"
-        >
-          <ShoppingCart className="w-5 h-5" />
-          Mulai Transaksi
-        </Link>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={refetch}
+            className="p-2 rounded-lg hover:bg-muted transition-colors"
+            title="Refresh Data"
+          >
+            <RefreshCw className="w-5 h-5 text-muted-foreground" />
+          </button>
+          <Link
+            to="/kasir/transaksi"
+            className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-colors"
+          >
+            <ShoppingCart className="w-5 h-5" />
+            Mulai Transaksi
+          </Link>
+        </div>
       </div>
+
+      {/* Shift Warning */}
+      {!currentShift?.isActive && (
+        <div className="p-4 rounded-xl bg-warning/20 border border-warning/50 flex items-center gap-3">
+          <Clock className="w-5 h-5 text-warning" />
+          <div>
+            <p className="font-medium text-warning">Shift Belum Dimulai</p>
+            <p className="text-sm text-muted-foreground">
+              Silakan buka shift terlebih dahulu sebelum melakukan transaksi
+            </p>
+          </div>
+          <Link
+            to="/kasir/shift"
+            className="ml-auto px-4 py-2 rounded-lg bg-warning text-warning-foreground font-medium hover:bg-warning/90 transition-colors"
+          >
+            Buka Shift
+          </Link>
+        </div>
+      )}
 
       {/* Stats Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {stats.map((stat, index) => (
+        {statCards.map((stat, index) => (
           <div 
             key={index} 
             className="bg-card border border-border rounded-2xl p-4 lg:p-5 hover:shadow-lg transition-shadow"
@@ -115,8 +157,8 @@ const KasirDashboard = () => {
           <h2 className="text-lg font-semibold mb-4">Metode Pembayaran Hari Ini</h2>
           <div className="space-y-3">
             {paymentMethods.map((method) => {
-              const amount = paymentBreakdown[method.key] || 0;
-              const percentage = todaySales > 0 ? (amount / todaySales) * 100 : 0;
+              const amount = stats.paymentBreakdown[method.key] || 0;
+              const percentage = totalSales > 0 ? (amount / totalSales) * 100 : 0;
               
               return (
                 <div key={method.key} className="flex items-center gap-3">
@@ -133,7 +175,7 @@ const KasirDashboard = () => {
                         className={`h-full rounded-full transition-all duration-500 ${
                           method.key === 'cash' ? 'bg-success' :
                           method.key === 'qris' ? 'bg-primary' :
-                          method.key === 'transfer' ? 'bg-info' : 'bg-warning'
+                          method.key === 'bank' ? 'bg-info' : 'bg-warning'
                         }`}
                         style={{ width: `${percentage}%` }}
                       />
@@ -158,14 +200,14 @@ const KasirDashboard = () => {
             </Link>
           </div>
           
-          {recentTransactions.length === 0 ? (
+          {stats.recentTransactions.length === 0 ? (
             <div className="text-center py-8">
               <Receipt className="w-12 h-12 mx-auto text-muted-foreground mb-3" />
-              <p className="text-muted-foreground">Belum ada transaksi</p>
+              <p className="text-muted-foreground">Belum ada transaksi hari ini</p>
             </div>
           ) : (
             <div className="space-y-3">
-              {recentTransactions.map((tx) => (
+              {stats.recentTransactions.map((tx) => (
                 <div 
                   key={tx.id} 
                   className="flex items-center justify-between p-3 rounded-xl bg-muted/50 hover:bg-muted transition-colors"
@@ -175,20 +217,20 @@ const KasirDashboard = () => {
                       <Receipt className="w-5 h-5 text-primary" />
                     </div>
                     <div>
-                      <p className="font-mono text-sm font-medium">{tx.receiptNumber}</p>
+                      <p className="font-mono text-sm font-medium">{tx.invoice}</p>
                       <p className="text-xs text-muted-foreground">
-                        {new Date(tx.createdAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
+                        {new Date(tx.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
                       </p>
                     </div>
                   </div>
                   <div className="text-right">
                     <p className="font-semibold">{formatCurrency(tx.total)}</p>
                     <span className={`text-xs px-2 py-0.5 rounded-full ${
-                      tx.paymentMethod === 'cash' ? 'bg-success/20 text-success' :
-                      tx.paymentMethod === 'qris' ? 'bg-primary/20 text-primary' :
+                      tx.payment_method === 'cash' ? 'bg-success/20 text-success' :
+                      tx.payment_method === 'qris' ? 'bg-primary/20 text-primary' :
                       'bg-info/20 text-info'
                     }`}>
-                      {tx.paymentMethod.toUpperCase()}
+                      {tx.payment_method.toUpperCase()}
                     </span>
                   </div>
                 </div>
@@ -224,11 +266,11 @@ const KasirDashboard = () => {
             <span className="text-sm font-medium text-center">Kelola Shift</span>
           </Link>
           <button
-            onClick={() => window.print()}
+            onClick={refetch}
             className="flex flex-col items-center gap-2 p-4 rounded-xl bg-muted hover:bg-muted/80 transition-colors"
           >
-            <TrendingUp className="w-6 h-6 text-muted-foreground" />
-            <span className="text-sm font-medium text-center">Laporan Harian</span>
+            <RefreshCw className="w-6 h-6 text-muted-foreground" />
+            <span className="text-sm font-medium text-center">Refresh Data</span>
           </button>
         </div>
       </div>

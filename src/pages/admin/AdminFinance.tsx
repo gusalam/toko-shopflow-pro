@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Plus,
   TrendingUp,
@@ -6,29 +6,21 @@ import {
   Wallet,
   ArrowUpRight,
   ArrowDownRight,
-  Edit,
-  Trash2,
-  X,
   Calendar,
   Filter,
   FileText,
   Download,
+  Loader2,
+  RefreshCw,
+  X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { exportToExcel, exportToPDF } from '@/lib/exportUtils';
 import { DateRangePicker } from '@/components/DateRangePicker';
-import { startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, isWithinInterval } from 'date-fns';
-
-interface Transaction {
-  id: string;
-  type: 'income' | 'expense';
-  category: string;
-  description: string;
-  amount: number;
-  date: Date;
-  reference?: string;
-}
+import { useCashBooks, CashBookEntry } from '@/hooks/useCashBooks';
+import { startOfDay, endOfDay, isWithinInterval, format } from 'date-fns';
+import { id as localeID } from 'date-fns/locale';
 
 const formatCurrency = (value: number) => {
   return new Intl.NumberFormat('id-ID', {
@@ -39,103 +31,30 @@ const formatCurrency = (value: number) => {
   }).format(value);
 };
 
-const incomeCategories = ['Penjualan', 'Pendapatan Lain', 'Retur Pembelian'];
-const expenseCategories = ['Pembelian Stok', 'Gaji Karyawan', 'Sewa', 'Listrik & Air', 'Operasional', 'Lainnya'];
-
-const dummyTransactions: Transaction[] = [
-  {
-    id: '1',
-    type: 'income',
-    category: 'Penjualan',
-    description: 'Penjualan harian',
-    amount: 2500000,
-    date: new Date('2024-12-28'),
-    reference: 'TRX-001',
-  },
-  {
-    id: '2',
-    type: 'expense',
-    category: 'Pembelian Stok',
-    description: 'Pembelian stok beras dari supplier',
-    amount: 1500000,
-    date: new Date('2024-12-27'),
-    reference: 'PO-001',
-  },
-  {
-    id: '3',
-    type: 'income',
-    category: 'Penjualan',
-    description: 'Penjualan harian',
-    amount: 1800000,
-    date: new Date('2024-12-27'),
-    reference: 'TRX-002',
-  },
-  {
-    id: '4',
-    type: 'expense',
-    category: 'Gaji Karyawan',
-    description: 'Gaji kasir bulan Desember',
-    amount: 3000000,
-    date: new Date('2024-12-25'),
-  },
-  {
-    id: '5',
-    type: 'expense',
-    category: 'Listrik & Air',
-    description: 'Pembayaran listrik bulan Desember',
-    amount: 450000,
-    date: new Date('2024-12-20'),
-  },
-  {
-    id: '6',
-    type: 'income',
-    category: 'Penjualan',
-    description: 'Penjualan harian',
-    amount: 3200000,
-    date: new Date('2024-12-26'),
-    reference: 'TRX-003',
-  },
-];
+const sourceLabels: Record<string, string> = {
+  transaction: 'Penjualan',
+  purchase: 'Pembelian Supplier',
+  manual: 'Manual',
+};
 
 const AdminFinance = () => {
-  const [transactions, setTransactions] = useState<Transaction[]>(dummyTransactions);
-  const [filterType, setFilterType] = useState<'all' | 'income' | 'expense'>('all');
+  const [filterType, setFilterType] = useState<'all' | 'in' | 'out'>('all');
   const [startDate, setStartDate] = useState<Date | undefined>(undefined);
   const [endDate, setEndDate] = useState<Date | undefined>(undefined);
   const [showModal, setShowModal] = useState(false);
-  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const [formData, setFormData] = useState({
-    type: 'income' as 'income' | 'expense',
-    category: '',
+    type: 'in' as 'in' | 'out',
     description: '',
     amount: '',
-    date: new Date().toISOString().split('T')[0],
-    reference: '',
   });
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const filteredTransactions = transactions
-    .filter((t) => filterType === 'all' || t.type === filterType)
-    .filter((t) => {
-      if (!startDate && !endDate) return true;
-      if (startDate && endDate) {
-        return isWithinInterval(t.date, { start: startOfDay(startDate), end: endOfDay(endDate) });
-      }
-      if (startDate) return t.date >= startOfDay(startDate);
-      if (endDate) return t.date <= endOfDay(endDate);
-      return true;
-    })
-    .sort((a, b) => b.date.getTime() - a.date.getTime());
+  const { entries, summary, isLoading, error, refetch, addManualEntry } = useCashBooks(startDate, endDate);
 
-  const totalIncome = filteredTransactions
-    .filter((t) => t.type === 'income')
-    .reduce((sum, t) => sum + t.amount, 0);
-
-  const totalExpense = filteredTransactions
-    .filter((t) => t.type === 'expense')
-    .reduce((sum, t) => sum + t.amount, 0);
-
-  const balance = totalIncome - totalExpense;
+  const filteredEntries = entries.filter((e) => {
+    if (filterType === 'all') return true;
+    return e.type === filterType;
+  });
 
   const handleExportPDF = () => {
     const exportData = {
@@ -144,21 +63,21 @@ const AdminFinance = () => {
       columns: [
         { header: 'Tanggal', key: 'dateStr', width: 15 },
         { header: 'Tipe', key: 'typeStr', width: 12 },
-        { header: 'Kategori', key: 'category', width: 18 },
+        { header: 'Sumber', key: 'source', width: 18 },
         { header: 'Deskripsi', key: 'description', width: 25 },
         { header: 'Jumlah', key: 'amount', width: 18 },
       ],
-      data: filteredTransactions.map((t) => ({
-        dateStr: t.date.toLocaleDateString('id-ID'),
-        typeStr: t.type === 'income' ? 'Pemasukan' : 'Pengeluaran',
-        category: t.category,
-        description: t.description,
-        amount: t.amount,
+      data: filteredEntries.map((e) => ({
+        dateStr: format(new Date(e.created_at), 'd MMM yyyy HH:mm', { locale: localeID }),
+        typeStr: e.type === 'in' ? 'Pemasukan' : 'Pengeluaran',
+        source: sourceLabels[e.source] || e.source,
+        description: e.description || '-',
+        amount: e.amount,
       })),
       summary: [
-        { label: 'Total Pemasukan', value: formatCurrency(totalIncome) },
-        { label: 'Total Pengeluaran', value: formatCurrency(totalExpense) },
-        { label: 'Saldo', value: formatCurrency(balance) },
+        { label: 'Total Pemasukan', value: formatCurrency(summary.totalIncome) },
+        { label: 'Total Pengeluaran', value: formatCurrency(summary.totalExpense) },
+        { label: 'Saldo', value: formatCurrency(summary.balance) },
       ],
     };
 
@@ -171,25 +90,25 @@ const AdminFinance = () => {
       title: 'Laporan Pembukuan',
       filename: 'laporan_pembukuan',
       columns: [
-        { header: 'Tanggal', key: 'dateStr', width: 15 },
+        { header: 'Tanggal', key: 'dateStr', width: 20 },
         { header: 'Tipe', key: 'typeStr', width: 12 },
-        { header: 'Kategori', key: 'category', width: 18 },
-        { header: 'Deskripsi', key: 'description', width: 25 },
+        { header: 'Sumber', key: 'source', width: 18 },
+        { header: 'Deskripsi', key: 'description', width: 30 },
         { header: 'Referensi', key: 'reference', width: 15 },
         { header: 'Jumlah', key: 'amount', width: 18 },
       ],
-      data: filteredTransactions.map((t) => ({
-        dateStr: t.date.toLocaleDateString('id-ID'),
-        typeStr: t.type === 'income' ? 'Pemasukan' : 'Pengeluaran',
-        category: t.category,
-        description: t.description,
-        reference: t.reference || '-',
-        amount: t.amount,
+      data: filteredEntries.map((e) => ({
+        dateStr: format(new Date(e.created_at), 'd MMM yyyy HH:mm', { locale: localeID }),
+        typeStr: e.type === 'in' ? 'Pemasukan' : 'Pengeluaran',
+        source: sourceLabels[e.source] || e.source,
+        description: e.description || '-',
+        reference: e.reference_id || '-',
+        amount: e.amount,
       })),
       summary: [
-        { label: 'Total Pemasukan', value: formatCurrency(totalIncome) },
-        { label: 'Total Pengeluaran', value: formatCurrency(totalExpense) },
-        { label: 'Saldo', value: formatCurrency(balance) },
+        { label: 'Total Pemasukan', value: formatCurrency(summary.totalIncome) },
+        { label: 'Total Pengeluaran', value: formatCurrency(summary.totalExpense) },
+        { label: 'Saldo', value: formatCurrency(summary.balance) },
       ],
     };
 
@@ -197,35 +116,18 @@ const AdminFinance = () => {
     toast.success('Laporan Excel berhasil diunduh');
   };
 
-  const openAddModal = (type: 'income' | 'expense') => {
-    setEditingTransaction(null);
+  const openAddModal = (type: 'in' | 'out') => {
     setFormData({
       type,
-      category: '',
       description: '',
       amount: '',
-      date: new Date().toISOString().split('T')[0],
-      reference: '',
     });
     setShowModal(true);
   };
 
-  const openEditModal = (transaction: Transaction) => {
-    setEditingTransaction(transaction);
-    setFormData({
-      type: transaction.type,
-      category: transaction.category,
-      description: transaction.description,
-      amount: transaction.amount.toString(),
-      date: transaction.date.toISOString().split('T')[0],
-      reference: transaction.reference || '',
-    });
-    setShowModal(true);
-  };
-
-  const handleSave = () => {
-    if (!formData.category) {
-      toast.error('Pilih kategori');
+  const handleSave = async () => {
+    if (!formData.description.trim()) {
+      toast.error('Masukkan deskripsi');
       return;
     }
     if (!formData.amount || parseFloat(formData.amount) <= 0) {
@@ -233,48 +135,45 @@ const AdminFinance = () => {
       return;
     }
 
-    if (editingTransaction) {
-      setTransactions((prev) =>
-        prev.map((t) =>
-          t.id === editingTransaction.id
-            ? {
-                ...t,
-                type: formData.type,
-                category: formData.category,
-                description: formData.description,
-                amount: parseFloat(formData.amount),
-                date: new Date(formData.date),
-                reference: formData.reference || undefined,
-              }
-            : t
-        )
-      );
-      toast.success('Transaksi berhasil diperbarui');
+    setIsSubmitting(true);
+    const result = await addManualEntry(
+      formData.type,
+      parseFloat(formData.amount),
+      formData.description.trim()
+    );
+
+    if (result.success) {
+      toast.success('Entri berhasil ditambahkan');
+      setShowModal(false);
     } else {
-      const newTransaction: Transaction = {
-        id: Date.now().toString(),
-        type: formData.type,
-        category: formData.category,
-        description: formData.description,
-        amount: parseFloat(formData.amount),
-        date: new Date(formData.date),
-        reference: formData.reference || undefined,
-      };
-      setTransactions((prev) => [...prev, newTransaction]);
-      toast.success('Transaksi berhasil ditambahkan');
+      toast.error(result.error || 'Gagal menambahkan entri');
     }
-
-    setShowModal(false);
-    setEditingTransaction(null);
+    setIsSubmitting(false);
   };
 
-  const handleDelete = (id: string) => {
-    setTransactions((prev) => prev.filter((t) => t.id !== id));
-    setShowDeleteConfirm(null);
-    toast.success('Transaksi berhasil dihapus');
-  };
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-[50vh]">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        <span className="ml-2 text-muted-foreground">Memuat data pembukuan...</span>
+      </div>
+    );
+  }
 
-  const categories = formData.type === 'income' ? incomeCategories : expenseCategories;
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[50vh] gap-4">
+        <p className="text-destructive">{error}</p>
+        <button
+          onClick={refetch}
+          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-primary-foreground"
+        >
+          <RefreshCw className="w-4 h-4" />
+          Coba Lagi
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 lg:p-6 space-y-6">
@@ -282,9 +181,16 @@ const AdminFinance = () => {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl lg:text-3xl font-bold">Pembukuan</h1>
-          <p className="text-muted-foreground">Kelola pemasukan dan pengeluaran</p>
+          <p className="text-muted-foreground">Data real-time dari database</p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <button
+            onClick={refetch}
+            className="p-2 rounded-lg hover:bg-muted transition-colors"
+            title="Refresh"
+          >
+            <RefreshCw className="w-5 h-5 text-muted-foreground" />
+          </button>
           <button
             onClick={handleExportPDF}
             className="px-4 py-2 rounded-xl bg-destructive/20 text-destructive hover:bg-destructive/30 transition-colors flex items-center gap-2"
@@ -300,14 +206,14 @@ const AdminFinance = () => {
             <span className="hidden sm:inline">Export</span> Excel
           </button>
           <button
-            onClick={() => openAddModal('income')}
+            onClick={() => openAddModal('in')}
             className="btn-pos-success flex items-center gap-2"
           >
             <ArrowUpRight className="w-5 h-5" />
             <span>Pemasukan</span>
           </button>
           <button
-            onClick={() => openAddModal('expense')}
+            onClick={() => openAddModal('out')}
             className="btn-pos-danger flex items-center gap-2"
           >
             <ArrowDownRight className="w-5 h-5" />
@@ -322,7 +228,7 @@ const AdminFinance = () => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-muted-foreground mb-1">Total Pemasukan</p>
-              <p className="text-2xl font-bold text-success">{formatCurrency(totalIncome)}</p>
+              <p className="text-2xl font-bold text-success">{formatCurrency(summary.totalIncome)}</p>
             </div>
             <div className="w-12 h-12 rounded-xl bg-success/20 flex items-center justify-center">
               <TrendingUp className="w-6 h-6 text-success" />
@@ -333,7 +239,7 @@ const AdminFinance = () => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-muted-foreground mb-1">Total Pengeluaran</p>
-              <p className="text-2xl font-bold text-destructive">{formatCurrency(totalExpense)}</p>
+              <p className="text-2xl font-bold text-destructive">{formatCurrency(summary.totalExpense)}</p>
             </div>
             <div className="w-12 h-12 rounded-xl bg-destructive/20 flex items-center justify-center">
               <TrendingDown className="w-6 h-6 text-destructive" />
@@ -344,8 +250,8 @@ const AdminFinance = () => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-muted-foreground mb-1">Saldo</p>
-              <p className={cn('text-2xl font-bold', balance >= 0 ? 'text-primary' : 'text-destructive')}>
-                {formatCurrency(balance)}
+              <p className={cn('text-2xl font-bold', summary.balance >= 0 ? 'text-primary' : 'text-destructive')}>
+                {formatCurrency(summary.balance)}
               </p>
             </div>
             <div className="w-12 h-12 rounded-xl bg-primary/20 flex items-center justify-center">
@@ -358,7 +264,7 @@ const AdminFinance = () => {
       {/* Filter */}
       <div className="flex flex-wrap gap-4 items-center">
         <div className="flex gap-2 overflow-x-auto">
-          {(['all', 'income', 'expense'] as const).map((type) => (
+          {(['all', 'in', 'out'] as const).map((type) => (
             <button
               key={type}
               onClick={() => setFilterType(type)}
@@ -370,9 +276,9 @@ const AdminFinance = () => {
               )}
             >
               {type === 'all' && <Filter className="w-4 h-4" />}
-              {type === 'income' && <ArrowUpRight className="w-4 h-4" />}
-              {type === 'expense' && <ArrowDownRight className="w-4 h-4" />}
-              {type === 'all' ? 'Semua' : type === 'income' ? 'Pemasukan' : 'Pengeluaran'}
+              {type === 'in' && <ArrowUpRight className="w-4 h-4" />}
+              {type === 'out' && <ArrowDownRight className="w-4 h-4" />}
+              {type === 'all' ? 'Semua' : type === 'in' ? 'Pemasukan' : 'Pengeluaran'}
             </button>
           ))}
         </div>
@@ -405,68 +311,45 @@ const AdminFinance = () => {
             <thead>
               <tr className="border-b border-border">
                 <th className="px-4 py-4 text-left text-sm font-semibold text-muted-foreground">Tanggal</th>
-                <th className="px-4 py-4 text-left text-sm font-semibold text-muted-foreground">Kategori</th>
+                <th className="px-4 py-4 text-left text-sm font-semibold text-muted-foreground">Sumber</th>
                 <th className="px-4 py-4 text-left text-sm font-semibold text-muted-foreground">Deskripsi</th>
-                <th className="px-4 py-4 text-left text-sm font-semibold text-muted-foreground">Referensi</th>
                 <th className="px-4 py-4 text-right text-sm font-semibold text-muted-foreground">Jumlah</th>
-                <th className="px-4 py-4 text-center text-sm font-semibold text-muted-foreground">Aksi</th>
               </tr>
             </thead>
             <tbody>
-              {filteredTransactions.map((transaction) => (
-                <tr key={transaction.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
+              {filteredEntries.map((entry) => (
+                <tr key={entry.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
                   <td className="px-4 py-4">
                     <div className="flex items-center gap-2">
                       <Calendar className="w-4 h-4 text-muted-foreground" />
-                      <span>{transaction.date.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                      <span>{format(new Date(entry.created_at), 'd MMM yyyy HH:mm', { locale: localeID })}</span>
                     </div>
                   </td>
                   <td className="px-4 py-4">
                     <span
                       className={cn(
                         'px-2 py-1 rounded-full text-xs font-medium',
-                        transaction.type === 'income' ? 'badge-success' : 'badge-danger'
+                        entry.type === 'in' ? 'badge-success' : 'badge-danger'
                       )}
                     >
-                      {transaction.category}
+                      {sourceLabels[entry.source] || entry.source}
                     </span>
                   </td>
-                  <td className="px-4 py-4 text-muted-foreground">{transaction.description}</td>
-                  <td className="px-4 py-4">
-                    {transaction.reference && (
-                      <span className="font-mono text-sm text-muted-foreground">{transaction.reference}</span>
-                    )}
-                  </td>
+                  <td className="px-4 py-4 text-muted-foreground">{entry.description || '-'}</td>
                   <td className="px-4 py-4 text-right">
                     <span
                       className={cn(
                         'font-semibold flex items-center justify-end gap-1',
-                        transaction.type === 'income' ? 'text-success' : 'text-destructive'
+                        entry.type === 'in' ? 'text-success' : 'text-destructive'
                       )}
                     >
-                      {transaction.type === 'income' ? (
+                      {entry.type === 'in' ? (
                         <ArrowUpRight className="w-4 h-4" />
                       ) : (
                         <ArrowDownRight className="w-4 h-4" />
                       )}
-                      {formatCurrency(transaction.amount)}
+                      {formatCurrency(entry.amount)}
                     </span>
-                  </td>
-                  <td className="px-4 py-4">
-                    <div className="flex items-center justify-center gap-2">
-                      <button
-                        onClick={() => openEditModal(transaction)}
-                        className="p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                      >
-                        <Edit className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => setShowDeleteConfirm(transaction.id)}
-                        className="p-2 rounded-lg hover:bg-destructive/20 text-muted-foreground hover:text-destructive transition-colors"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
                   </td>
                 </tr>
               ))}
@@ -474,94 +357,70 @@ const AdminFinance = () => {
           </table>
         </div>
 
-        {filteredTransactions.length === 0 && (
+        {filteredEntries.length === 0 && (
           <div className="py-12 text-center">
             <Wallet className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-            <p className="text-lg font-medium">Tidak ada transaksi</p>
-            <p className="text-muted-foreground">Mulai catat pemasukan dan pengeluaran Anda</p>
+            <p className="text-muted-foreground">Belum ada data pembukuan</p>
           </div>
         )}
       </div>
 
-      {/* Add/Edit Modal */}
+      {/* Add Modal */}
       {showModal && (
-        <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
-          style={{ zIndex: 9999 }}
-          onClick={(e) => {
-            if (e.target === e.currentTarget) {
-              setShowModal(false);
-              setEditingTransaction(null);
-            }
-          }}
-        >
-          <div
-            className="w-full max-w-lg max-h-[90vh] bg-card rounded-2xl shadow-2xl border border-border animate-scale-in overflow-hidden flex flex-col"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between p-4 sm:p-6 border-b border-border shrink-0">
-              <h2 className="text-lg sm:text-xl font-bold flex items-center gap-2">
-                {formData.type === 'income' ? (
-                  <ArrowUpRight className="w-5 h-5 text-success" />
-                ) : (
-                  <ArrowDownRight className="w-5 h-5 text-destructive" />
-                )}
-                {editingTransaction ? 'Edit Transaksi' : formData.type === 'income' ? 'Tambah Pemasukan' : 'Tambah Pengeluaran'}
+        <div className="fixed inset-0 bg-background/90 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-card rounded-2xl shadow-xl border border-border animate-scale-in">
+            <div className="flex items-center justify-between p-6 border-b border-border">
+              <h2 className="text-xl font-bold">
+                {formData.type === 'in' ? 'Tambah Pemasukan' : 'Tambah Pengeluaran'}
               </h2>
               <button
-                onClick={() => {
-                  setShowModal(false);
-                  setEditingTransaction(null);
-                }}
+                onClick={() => setShowModal(false)}
                 className="p-2 rounded-lg hover:bg-muted transition-colors"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="p-4 sm:p-6 space-y-4 overflow-y-auto flex-1">
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setFormData({ ...formData, type: 'income', category: '' })}
-                  className={cn(
-                    'flex-1 py-3 px-4 rounded-xl font-medium flex items-center justify-center gap-2 transition-all',
-                    formData.type === 'income'
-                      ? 'bg-success text-success-foreground'
-                      : 'bg-muted text-muted-foreground hover:text-foreground'
-                  )}
-                >
-                  <ArrowUpRight className="w-4 h-4" />
-                  Pemasukan
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFormData({ ...formData, type: 'expense', category: '' })}
-                  className={cn(
-                    'flex-1 py-3 px-4 rounded-xl font-medium flex items-center justify-center gap-2 transition-all',
-                    formData.type === 'expense'
-                      ? 'bg-destructive text-destructive-foreground'
-                      : 'bg-muted text-muted-foreground hover:text-foreground'
-                  )}
-                >
-                  <ArrowDownRight className="w-4 h-4" />
-                  Pengeluaran
-                </button>
+
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-2">Tipe</label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setFormData((prev) => ({ ...prev, type: 'in' }))}
+                    className={cn(
+                      'flex-1 py-2 rounded-xl font-medium transition-colors',
+                      formData.type === 'in'
+                        ? 'bg-success/20 text-success border-2 border-success'
+                        : 'bg-muted text-muted-foreground'
+                    )}
+                  >
+                    Pemasukan
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormData((prev) => ({ ...prev, type: 'out' }))}
+                    className={cn(
+                      'flex-1 py-2 rounded-xl font-medium transition-colors',
+                      formData.type === 'out'
+                        ? 'bg-destructive/20 text-destructive border-2 border-destructive'
+                        : 'bg-muted text-muted-foreground'
+                    )}
+                  >
+                    Pengeluaran
+                  </button>
+                </div>
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-2">Kategori</label>
-                <select
-                  value={formData.category}
-                  onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                  className="w-full h-12 px-4 rounded-xl bg-input border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-primary transition-all"
-                >
-                  <option value="">Pilih Kategori</option>
-                  {categories.map((cat) => (
-                    <option key={cat} value={cat}>
-                      {cat}
-                    </option>
-                  ))}
-                </select>
+                <label className="block text-sm font-medium mb-2">Deskripsi</label>
+                <input
+                  type="text"
+                  value={formData.description}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, description: e.target.value }))}
+                  placeholder="Contoh: Gaji karyawan"
+                  className="w-full h-12 px-4 rounded-xl bg-input border border-border"
+                />
               </div>
 
               <div>
@@ -569,97 +428,37 @@ const AdminFinance = () => {
                 <input
                   type="number"
                   value={formData.amount}
-                  onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, amount: e.target.value }))}
                   placeholder="0"
-                  className="w-full h-12 px-4 rounded-xl bg-input border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary transition-all"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium mb-2">Tanggal</label>
-                <input
-                  type="date"
-                  value={formData.date}
-                  onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                  className="w-full h-12 px-4 rounded-xl bg-input border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-primary transition-all"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium mb-2">Deskripsi</label>
-                <textarea
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  placeholder="Keterangan transaksi..."
-                  rows={2}
-                  className="w-full px-4 py-3 rounded-xl bg-input border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary transition-all resize-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium mb-2">Referensi (opsional)</label>
-                <input
-                  type="text"
-                  value={formData.reference}
-                  onChange={(e) => setFormData({ ...formData, reference: e.target.value })}
-                  placeholder="No. invoice, PO, dll"
-                  className="w-full h-12 px-4 rounded-xl bg-input border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary transition-all"
+                  className="w-full h-12 px-4 rounded-xl bg-input border border-border text-xl font-bold"
                 />
               </div>
             </div>
-            <div className="flex gap-3 p-4 sm:p-6 border-t border-border shrink-0">
+
+            <div className="flex gap-3 p-6 border-t border-border">
               <button
-                onClick={() => {
-                  setShowModal(false);
-                  setEditingTransaction(null);
-                }}
+                onClick={() => setShowModal(false)}
                 className="flex-1 btn-pos-secondary"
+                disabled={isSubmitting}
               >
                 Batal
               </button>
               <button
                 onClick={handleSave}
                 className={cn(
-                  'flex-1 btn-pos',
-                  formData.type === 'income' ? 'btn-pos-success' : 'btn-pos-danger'
+                  'flex-1 flex items-center justify-center gap-2',
+                  formData.type === 'in' ? 'btn-pos-success' : 'btn-pos-danger'
                 )}
+                disabled={isSubmitting}
               >
-                {editingTransaction ? 'Simpan Perubahan' : 'Simpan'}
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" /> Menyimpan...
+                  </>
+                ) : (
+                  'Simpan'
+                )}
               </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Delete Confirmation Modal */}
-      {showDeleteConfirm && (
-        <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
-          style={{ zIndex: 9999 }}
-        >
-          <div className="w-full max-w-sm bg-card rounded-2xl shadow-2xl border border-border p-6 animate-scale-in">
-            <div className="text-center">
-              <div className="w-16 h-16 rounded-full bg-destructive/20 flex items-center justify-center mx-auto mb-4">
-                <Trash2 className="w-8 h-8 text-destructive" />
-              </div>
-              <h3 className="text-lg font-bold mb-2">Hapus Transaksi?</h3>
-              <p className="text-muted-foreground mb-6">
-                Transaksi yang dihapus tidak dapat dikembalikan.
-              </p>
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setShowDeleteConfirm(null)}
-                  className="flex-1 btn-pos-secondary"
-                >
-                  Batal
-                </button>
-                <button
-                  onClick={() => handleDelete(showDeleteConfirm)}
-                  className="flex-1 btn-pos-danger"
-                >
-                  Hapus
-                </button>
-              </div>
             </div>
           </div>
         </div>
