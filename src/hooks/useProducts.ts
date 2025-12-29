@@ -55,8 +55,39 @@ export function useProducts() {
     }
   }, []);
 
+  // Initial fetch and real-time subscription
   useEffect(() => {
     fetchProducts();
+
+    // Subscribe to real-time changes on products table
+    const channel = supabase
+      .channel('products-realtime')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'products',
+        },
+        (payload) => {
+          console.log('Product change detected:', payload.eventType);
+          
+          if (payload.eventType === 'INSERT') {
+            setProducts((prev) => [...prev, payload.new as SupabaseProduct].sort((a, b) => a.name.localeCompare(b.name)));
+          } else if (payload.eventType === 'UPDATE') {
+            setProducts((prev) =>
+              prev.map((p) => (p.id === payload.new.id ? (payload.new as SupabaseProduct) : p))
+            );
+          } else if (payload.eventType === 'DELETE') {
+            setProducts((prev) => prev.filter((p) => p.id !== payload.old.id));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [fetchProducts]);
 
   const getFilteredProducts = useCallback(() => {
