@@ -32,6 +32,7 @@ interface TransactionState {
   getTodayTransactions: () => Transaction[];
   getTodaySales: () => number;
   refundTransaction: (transactionId: string) => void;
+  clearTransactions: () => void;
 }
 
 // Generate receipt number
@@ -42,72 +43,9 @@ const generateReceiptNumber = (): string => {
   return `INV-${dateStr}-${random}`;
 };
 
-// Dummy transactions for demo
-const dummyTransactions: Transaction[] = [
-  {
-    id: '1',
-    receiptNumber: 'INV-20241228-0001',
-    items: [],
-    customer: null,
-    subtotal: 125000,
-    itemsDiscount: 0,
-    cartDiscount: 0,
-    tax: 0,
-    total: 125000,
-    paymentMethod: 'cash',
-    amountPaid: 130000,
-    change: 5000,
-    cashierId: '2',
-    cashierName: 'Kasir Budi',
-    shiftId: '1',
-    createdAt: new Date(Date.now() - 3600000),
-    notes: '',
-    status: 'completed',
-  },
-  {
-    id: '2',
-    receiptNumber: 'INV-20241228-0002',
-    items: [],
-    customer: null,
-    subtotal: 87500,
-    itemsDiscount: 5000,
-    cartDiscount: 0,
-    tax: 0,
-    total: 82500,
-    paymentMethod: 'qris',
-    amountPaid: 82500,
-    change: 0,
-    cashierId: '2',
-    cashierName: 'Kasir Budi',
-    shiftId: '1',
-    createdAt: new Date(Date.now() - 1800000),
-    notes: '',
-    status: 'completed',
-  },
-  {
-    id: '3',
-    receiptNumber: 'INV-20241228-0003',
-    items: [],
-    customer: null,
-    subtotal: 250000,
-    itemsDiscount: 0,
-    cartDiscount: 10000,
-    tax: 0,
-    total: 240000,
-    paymentMethod: 'cash',
-    amountPaid: 250000,
-    change: 10000,
-    cashierId: '2',
-    cashierName: 'Kasir Budi',
-    shiftId: '1',
-    createdAt: new Date(Date.now() - 900000),
-    notes: 'Pelanggan langganan',
-    status: 'completed',
-  },
-];
-
+// No dummy data - use Supabase as single source of truth
 export const useTransactionStore = create<TransactionState>((set, get) => ({
-  transactions: dummyTransactions,
+  transactions: [],
 
   addTransaction: (transactionData) => {
     const newTransaction: Transaction = {
@@ -153,5 +91,9 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
         t.id === transactionId ? { ...t, status: 'refunded' as const } : t
       ),
     }));
+  },
+
+  clearTransactions: () => {
+    set({ transactions: [] });
   },
 }));
