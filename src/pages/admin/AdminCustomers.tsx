@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useCustomers, Customer, CustomerFormData } from '@/hooks/useCustomers';
 import {
   Search,
   Plus,
@@ -7,121 +8,33 @@ import {
   Trash2,
   X,
   Phone,
-  Mail,
   MapPin,
-  Star,
-  ShoppingBag,
+  Loader2,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { cn } from '@/lib/utils';
-
-interface Customer {
-  id: string;
-  name: string;
-  phone: string;
-  email: string;
-  address: string;
-  points: number;
-  totalTransactions: number;
-  totalSpent: number;
-  memberSince: Date;
-  status: 'active' | 'inactive';
-}
-
-const formatCurrency = (value: number) => {
-  return new Intl.NumberFormat('id-ID', {
-    style: 'currency',
-    currency: 'IDR',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(value);
-};
-
-const dummyCustomers: Customer[] = [
-  {
-    id: '1',
-    name: 'Ahmad Fauzi',
-    phone: '081234567890',
-    email: 'ahmad@email.com',
-    address: 'Jl. Merdeka No. 123, Jakarta',
-    points: 1250,
-    totalTransactions: 45,
-    totalSpent: 2500000,
-    memberSince: new Date('2024-01-15'),
-    status: 'active',
-  },
-  {
-    id: '2',
-    name: 'Siti Rahayu',
-    phone: '082345678901',
-    email: 'siti@email.com',
-    address: 'Jl. Sudirman No. 45, Bandung',
-    points: 850,
-    totalTransactions: 32,
-    totalSpent: 1800000,
-    memberSince: new Date('2024-02-20'),
-    status: 'active',
-  },
-  {
-    id: '3',
-    name: 'Budi Hartono',
-    phone: '083456789012',
-    email: 'budi@email.com',
-    address: 'Jl. Diponegoro No. 78, Surabaya',
-    points: 2100,
-    totalTransactions: 67,
-    totalSpent: 4200000,
-    memberSince: new Date('2023-11-10'),
-    status: 'active',
-  },
-  {
-    id: '4',
-    name: 'Dewi Lestari',
-    phone: '084567890123',
-    email: 'dewi@email.com',
-    address: 'Jl. Gatot Subroto No. 56, Semarang',
-    points: 450,
-    totalTransactions: 18,
-    totalSpent: 950000,
-    memberSince: new Date('2024-03-05'),
-    status: 'inactive',
-  },
-];
 
 const AdminCustomers = () => {
-  const [customers, setCustomers] = useState<Customer[]>(dummyCustomers);
+  const { customers, isLoading, addCustomer, updateCustomer, deleteCustomer } = useCustomers();
   const [searchQuery, setSearchQuery] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
-  const [formData, setFormData] = useState({
+  const [isSaving, setIsSaving] = useState(false);
+  const [formData, setFormData] = useState<CustomerFormData>({
     name: '',
     phone: '',
-    email: '',
     address: '',
-    status: 'active' as 'active' | 'inactive',
   });
 
   const filteredCustomers = customers.filter(
     (c) =>
       c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.phone.includes(searchQuery) ||
-      c.email.toLowerCase().includes(searchQuery.toLowerCase())
+      (c.phone && c.phone.includes(searchQuery))
   );
-
-  const activeCustomers = customers.filter((c) => c.status === 'active').length;
-  const totalPoints = customers.reduce((sum, c) => sum + c.points, 0);
-  const totalRevenue = customers.reduce((sum, c) => sum + c.totalSpent, 0);
 
   const openAddModal = () => {
     setEditingCustomer(null);
-    setFormData({
-      name: '',
-      phone: '',
-      email: '',
-      address: '',
-      status: 'active',
-    });
+    setFormData({ name: '', phone: '', address: '' });
     setShowModal(true);
   };
 
@@ -129,49 +42,48 @@ const AdminCustomers = () => {
     setEditingCustomer(customer);
     setFormData({
       name: customer.name,
-      phone: customer.phone,
-      email: customer.email,
-      address: customer.address,
-      status: customer.status,
+      phone: customer.phone || '',
+      address: customer.address || '',
     });
     setShowModal(true);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!formData.name.trim()) {
       toast.error('Nama pelanggan tidak boleh kosong');
       return;
     }
 
+    setIsSaving(true);
+    let success = false;
+
     if (editingCustomer) {
-      setCustomers((prev) =>
-        prev.map((c) =>
-          c.id === editingCustomer.id ? { ...c, ...formData } : c
-        )
-      );
-      toast.success('Pelanggan berhasil diperbarui');
+      success = await updateCustomer(editingCustomer.id, formData);
     } else {
-      const newCustomer: Customer = {
-        ...formData,
-        id: Date.now().toString(),
-        points: 0,
-        totalTransactions: 0,
-        totalSpent: 0,
-        memberSince: new Date(),
-      };
-      setCustomers((prev) => [...prev, newCustomer]);
-      toast.success('Pelanggan berhasil ditambahkan');
+      success = await addCustomer(formData);
     }
 
-    setShowModal(false);
-    setEditingCustomer(null);
+    if (success) {
+      setShowModal(false);
+      setEditingCustomer(null);
+    }
+    setIsSaving(false);
   };
 
-  const handleDelete = (id: string) => {
-    setCustomers((prev) => prev.filter((c) => c.id !== id));
-    setShowDeleteConfirm(null);
-    toast.success('Pelanggan berhasil dihapus');
+  const handleDelete = async (id: string) => {
+    const success = await deleteCustomer(id);
+    if (success) {
+      setShowDeleteConfirm(null);
+    }
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 lg:p-6 space-y-6">
@@ -179,9 +91,7 @@ const AdminCustomers = () => {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl lg:text-3xl font-bold">Pelanggan</h1>
-          <p className="text-muted-foreground">
-            {customers.length} pelanggan, {activeCustomers} aktif
-          </p>
+          <p className="text-muted-foreground">{customers.length} pelanggan terdaftar</p>
         </div>
         <button onClick={openAddModal} className="btn-pos-primary flex items-center gap-2">
           <Plus className="w-5 h-5" />
@@ -190,51 +100,14 @@ const AdminCustomers = () => {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="stat-card">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-primary/20 flex items-center justify-center">
-              <Users className="w-6 h-6 text-primary" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold">{customers.length}</p>
-              <p className="text-sm text-muted-foreground">Total Pelanggan</p>
-            </div>
+      <div className="stat-card">
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 rounded-xl bg-primary/20 flex items-center justify-center">
+            <Users className="w-6 h-6 text-primary" />
           </div>
-        </div>
-        <div className="stat-card">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-success/20 flex items-center justify-center">
-              <Star className="w-6 h-6 text-success" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold">{totalPoints.toLocaleString()}</p>
-              <p className="text-sm text-muted-foreground">Total Poin</p>
-            </div>
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-info/20 flex items-center justify-center">
-              <ShoppingBag className="w-6 h-6 text-info" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold">
-                {customers.reduce((sum, c) => sum + c.totalTransactions, 0)}
-              </p>
-              <p className="text-sm text-muted-foreground">Total Transaksi</p>
-            </div>
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-warning/20 flex items-center justify-center">
-              <span className="text-xl font-bold text-warning">Rp</span>
-            </div>
-            <div>
-              <p className="text-xl font-bold">{formatCurrency(totalRevenue)}</p>
-              <p className="text-sm text-muted-foreground">Total Belanja</p>
-            </div>
+          <div>
+            <p className="text-2xl font-bold">{customers.length}</p>
+            <p className="text-sm text-muted-foreground">Total Pelanggan</p>
           </div>
         </div>
       </div>
@@ -259,10 +132,7 @@ const AdminCustomers = () => {
               <tr className="border-b border-border">
                 <th className="px-4 py-4 text-left text-sm font-semibold text-muted-foreground">Pelanggan</th>
                 <th className="px-4 py-4 text-left text-sm font-semibold text-muted-foreground">Kontak</th>
-                <th className="px-4 py-4 text-center text-sm font-semibold text-muted-foreground">Poin</th>
-                <th className="px-4 py-4 text-center text-sm font-semibold text-muted-foreground">Transaksi</th>
-                <th className="px-4 py-4 text-right text-sm font-semibold text-muted-foreground">Total Belanja</th>
-                <th className="px-4 py-4 text-center text-sm font-semibold text-muted-foreground">Status</th>
+                <th className="px-4 py-4 text-left text-sm font-semibold text-muted-foreground">Alamat</th>
                 <th className="px-4 py-4 text-center text-sm font-semibold text-muted-foreground">Aksi</th>
               </tr>
             </thead>
@@ -279,44 +149,30 @@ const AdminCustomers = () => {
                       <div>
                         <p className="font-medium">{customer.name}</p>
                         <p className="text-xs text-muted-foreground">
-                          Member sejak {customer.memberSince.toLocaleDateString('id-ID', { month: 'short', year: 'numeric' })}
+                          Terdaftar {new Date(customer.created_at).toLocaleDateString('id-ID')}
                         </p>
                       </div>
                     </div>
                   </td>
                   <td className="px-4 py-4">
-                    <div className="space-y-1">
+                    {customer.phone ? (
                       <div className="flex items-center gap-2 text-sm">
                         <Phone className="w-3 h-3 text-muted-foreground" />
                         <span>{customer.phone}</span>
                       </div>
+                    ) : (
+                      <span className="text-muted-foreground">-</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-4">
+                    {customer.address ? (
                       <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <Mail className="w-3 h-3" />
-                        <span>{customer.email}</span>
+                        <MapPin className="w-3 h-3" />
+                        <span className="truncate max-w-[200px]">{customer.address}</span>
                       </div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-4 text-center">
-                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium badge-success">
-                      <Star className="w-3 h-3" />
-                      {customer.points.toLocaleString()}
-                    </span>
-                  </td>
-                  <td className="px-4 py-4 text-center font-medium">
-                    {customer.totalTransactions}
-                  </td>
-                  <td className="px-4 py-4 text-right font-semibold text-primary">
-                    {formatCurrency(customer.totalSpent)}
-                  </td>
-                  <td className="px-4 py-4 text-center">
-                    <span
-                      className={cn(
-                        'px-2 py-1 rounded-full text-xs font-medium',
-                        customer.status === 'active' ? 'badge-success' : 'badge-warning'
-                      )}
-                    >
-                      {customer.status === 'active' ? 'Aktif' : 'Nonaktif'}
-                    </span>
+                    ) : (
+                      <span className="text-muted-foreground">-</span>
+                    )}
                   </td>
                   <td className="px-4 py-4">
                     <div className="flex items-center justify-center gap-2">
@@ -344,7 +200,9 @@ const AdminCustomers = () => {
           <div className="py-12 text-center">
             <Users className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
             <p className="text-lg font-medium">Tidak ada pelanggan ditemukan</p>
-            <p className="text-muted-foreground">Coba ubah kata kunci pencarian</p>
+            <p className="text-muted-foreground">
+              {customers.length === 0 ? 'Mulai tambah pelanggan pertama' : 'Coba ubah kata kunci pencarian'}
+            </p>
           </div>
         )}
       </div>
@@ -361,12 +219,9 @@ const AdminCustomers = () => {
             }
           }}
         >
-          <div
-            className="w-full max-w-lg max-h-[90vh] bg-card rounded-2xl shadow-2xl border border-border animate-scale-in overflow-hidden flex flex-col"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between p-4 sm:p-6 border-b border-border shrink-0">
-              <h2 className="text-lg sm:text-xl font-bold">
+          <div className="w-full max-w-lg bg-card rounded-2xl shadow-2xl border border-border animate-scale-in">
+            <div className="flex items-center justify-between p-6 border-b border-border">
+              <h2 className="text-xl font-bold">
                 {editingCustomer ? 'Edit Pelanggan' : 'Tambah Pelanggan Baru'}
               </h2>
               <button
@@ -379,9 +234,9 @@ const AdminCustomers = () => {
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="p-4 sm:p-6 space-y-4 overflow-y-auto flex-1">
+            <div className="p-6 space-y-4">
               <div>
-                <label className="block text-sm font-medium mb-2">Nama Pelanggan</label>
+                <label className="block text-sm font-medium mb-2">Nama Pelanggan *</label>
                 <input
                   type="text"
                   value={formData.name}
@@ -390,27 +245,15 @@ const AdminCustomers = () => {
                   className="w-full h-12 px-4 rounded-xl bg-input border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary transition-all"
                 />
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium mb-2">Telepon</label>
-                  <input
-                    type="text"
-                    value={formData.phone}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    placeholder="08xxxxxxxxxx"
-                    className="w-full h-12 px-4 rounded-xl bg-input border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary transition-all"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-2">Email</label>
-                  <input
-                    type="email"
-                    value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    placeholder="email@contoh.com"
-                    className="w-full h-12 px-4 rounded-xl bg-input border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary transition-all"
-                  />
-                </div>
+              <div>
+                <label className="block text-sm font-medium mb-2">Telepon</label>
+                <input
+                  type="text"
+                  value={formData.phone}
+                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  placeholder="08xxxxxxxxxx"
+                  className="w-full h-12 px-4 rounded-xl bg-input border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary transition-all"
+                />
               </div>
               <div>
                 <label className="block text-sm font-medium mb-2">Alamat</label>
@@ -422,30 +265,30 @@ const AdminCustomers = () => {
                   className="w-full px-4 py-3 rounded-xl bg-input border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary transition-all resize-none"
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium mb-2">Status</label>
-                <select
-                  value={formData.status}
-                  onChange={(e) => setFormData({ ...formData, status: e.target.value as 'active' | 'inactive' })}
-                  className="w-full h-12 px-4 rounded-xl bg-input border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-primary transition-all"
-                >
-                  <option value="active">Aktif</option>
-                  <option value="inactive">Nonaktif</option>
-                </select>
-              </div>
             </div>
-            <div className="flex gap-3 p-4 sm:p-6 border-t border-border shrink-0">
+            <div className="flex gap-3 p-6 border-t border-border">
               <button
                 onClick={() => {
                   setShowModal(false);
                   setEditingCustomer(null);
                 }}
                 className="flex-1 btn-pos-secondary"
+                disabled={isSaving}
               >
                 Batal
               </button>
-              <button onClick={handleSave} className="flex-1 btn-pos-primary">
-                {editingCustomer ? 'Simpan Perubahan' : 'Tambah Pelanggan'}
+              <button 
+                onClick={handleSave} 
+                className="flex-1 btn-pos-primary flex items-center justify-center gap-2"
+                disabled={isSaving}
+              >
+                {isSaving ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" /> Menyimpan...
+                  </>
+                ) : (
+                  editingCustomer ? 'Simpan Perubahan' : 'Tambah Pelanggan'
+                )}
               </button>
             </div>
           </div>
@@ -465,7 +308,7 @@ const AdminCustomers = () => {
               </div>
               <h3 className="text-lg font-bold mb-2">Hapus Pelanggan?</h3>
               <p className="text-muted-foreground mb-6">
-                Data pelanggan yang dihapus tidak dapat dikembalikan.
+                Pelanggan yang dihapus tidak dapat dikembalikan.
               </p>
               <div className="flex gap-3">
                 <button

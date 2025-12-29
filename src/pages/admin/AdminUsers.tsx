@@ -1,42 +1,41 @@
 import { useState } from 'react';
-import { Users, Plus, Edit, Trash2, Shield, ShieldCheck, X, Eye, EyeOff, Search, UserCheck, UserX } from 'lucide-react';
+import { useUsers, UserProfile } from '@/hooks/useUsers';
+import { Users, Plus, Edit, Shield, ShieldCheck, X, Search, UserCheck, UserX, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
-interface User {
-  id: string;
-  name: string;
-  email: string;
-  role: 'admin' | 'kasir';
-  isActive: boolean;
-  lastLogin?: string;
-  createdAt: string;
-}
-
-const dummyUsers: User[] = [
-  { id: '1', name: 'Admin Toko', email: 'admin@tokosembako.com', role: 'admin', isActive: true, lastLogin: '28 Des 2024, 08:00', createdAt: '01 Jan 2024' },
-  { id: '2', name: 'Kasir Budi', email: 'budi@tokosembako.com', role: 'kasir', isActive: true, lastLogin: '28 Des 2024, 07:30', createdAt: '15 Feb 2024' },
-  { id: '3', name: 'Kasir Siti', email: 'siti@tokosembako.com', role: 'kasir', isActive: true, lastLogin: '27 Des 2024, 14:00', createdAt: '20 Mar 2024' },
-  { id: '4', name: 'Kasir Andi', email: 'andi@tokosembako.com', role: 'kasir', isActive: false, lastLogin: '15 Des 2024, 10:00', createdAt: '01 Apr 2024' },
-];
-
 const AdminUsers = () => {
-  const [users, setUsers] = useState(dummyUsers);
+  const { users, isLoading, updateUserStatus, updateUserRole } = useUsers();
   const [showModal, setShowModal] = useState(false);
-  const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedRole, setSelectedRole] = useState<'admin' | 'kasir'>('kasir');
 
   const filteredUsers = users.filter(
     (user) =>
-      user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      user.email.toLowerCase().includes(searchQuery.toLowerCase())
+      user.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const toggleUserStatus = (userId: string) => {
-    setUsers(users.map((user) =>
-      user.id === userId ? { ...user, isActive: !user.isActive } : user
-    ));
-    toast.success('Status user berhasil diubah');
+  const toggleUserStatus = async (userId: string, currentStatus: boolean) => {
+    await updateUserStatus(userId, !currentStatus);
   };
+
+  const handleSaveRole = async () => {
+    if (!editingUser) return;
+    
+    const success = await updateUserRole(editingUser.id, selectedRole);
+    if (success) {
+      setShowModal(false);
+      setEditingUser(null);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 lg:p-6 space-y-6">
@@ -46,16 +45,9 @@ const AdminUsers = () => {
           <h1 className="text-2xl lg:text-3xl font-bold">Manajemen User</h1>
           <p className="text-muted-foreground">{users.length} user terdaftar</p>
         </div>
-        <button
-          onClick={() => {
-            setEditingUser(null);
-            setShowModal(true);
-          }}
-          className="btn-pos-primary flex items-center gap-2"
-        >
-          <Plus className="w-5 h-5" />
-          <span>Tambah User</span>
-        </button>
+        <p className="text-sm text-muted-foreground bg-muted px-4 py-2 rounded-lg">
+          User baru dibuat melalui halaman Login &gt; Daftar
+        </p>
       </div>
 
       {/* Search */}
@@ -87,7 +79,7 @@ const AdminUsers = () => {
           </div>
           <div>
             <p className="text-sm text-muted-foreground">User Aktif</p>
-            <p className="text-2xl font-bold">{users.filter((u) => u.isActive).length}</p>
+            <p className="text-2xl font-bold">{users.filter((u) => u.is_active).length}</p>
           </div>
         </div>
         <div className="stat-card flex items-center gap-4">
@@ -96,7 +88,7 @@ const AdminUsers = () => {
           </div>
           <div>
             <p className="text-sm text-muted-foreground">User Nonaktif</p>
-            <p className="text-2xl font-bold">{users.filter((u) => !u.isActive).length}</p>
+            <p className="text-2xl font-bold">{users.filter((u) => !u.is_active).length}</p>
           </div>
         </div>
       </div>
@@ -110,7 +102,7 @@ const AdminUsers = () => {
                 <th className="px-4 py-4 text-left text-sm font-semibold text-muted-foreground">User</th>
                 <th className="px-4 py-4 text-left text-sm font-semibold text-muted-foreground">Role</th>
                 <th className="px-4 py-4 text-left text-sm font-semibold text-muted-foreground">Status</th>
-                <th className="px-4 py-4 text-left text-sm font-semibold text-muted-foreground">Login Terakhir</th>
+                <th className="px-4 py-4 text-left text-sm font-semibold text-muted-foreground">Terdaftar</th>
                 <th className="px-4 py-4 text-center text-sm font-semibold text-muted-foreground">Aksi</th>
               </tr>
             </thead>
@@ -124,7 +116,6 @@ const AdminUsers = () => {
                       </div>
                       <div>
                         <p className="font-medium">{user.name}</p>
-                        <p className="text-sm text-muted-foreground">{user.email}</p>
                       </div>
                     </div>
                   </td>
@@ -138,44 +129,33 @@ const AdminUsers = () => {
                   </td>
                   <td className="px-4 py-4">
                     <button
-                      onClick={() => toggleUserStatus(user.id)}
+                      onClick={() => toggleUserStatus(user.id, user.is_active)}
                       className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                        user.isActive
+                        user.is_active
                           ? 'badge-success hover:bg-success/30'
                           : 'badge-warning hover:bg-warning/30'
                       }`}
                     >
-                      <div className={`w-2 h-2 rounded-full ${user.isActive ? 'bg-success' : 'bg-warning'}`} />
-                      {user.isActive ? 'Aktif' : 'Nonaktif'}
+                      <div className={`w-2 h-2 rounded-full ${user.is_active ? 'bg-success' : 'bg-warning'}`} />
+                      {user.is_active ? 'Aktif' : 'Nonaktif'}
                     </button>
                   </td>
-                  <td className="px-4 py-4 text-muted-foreground text-sm">{user.lastLogin || '-'}</td>
+                  <td className="px-4 py-4 text-muted-foreground text-sm">
+                    {new Date(user.created_at).toLocaleDateString('id-ID')}
+                  </td>
                   <td className="px-4 py-4">
                     <div className="flex items-center justify-center gap-2">
                       <button
                         onClick={() => {
                           setEditingUser(user);
+                          setSelectedRole(user.role);
                           setShowModal(true);
                         }}
                         className="p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                        title="Edit Role"
                       >
                         <Edit className="w-4 h-4" />
                       </button>
-                      <button
-                        onClick={() => toast.info('Reset password link dikirim ke email user')}
-                        className="p-2 rounded-lg hover:bg-info/20 text-muted-foreground hover:text-info transition-colors"
-                        title="Reset Password"
-                      >
-                        <Eye className="w-4 h-4" />
-                      </button>
-                      {user.role !== 'admin' && (
-                        <button
-                          onClick={() => toast.error('Fitur hapus user belum tersedia')}
-                          className="p-2 rounded-lg hover:bg-destructive/20 text-muted-foreground hover:text-destructive transition-colors"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
                     </div>
                   </td>
                 </tr>
@@ -183,16 +163,21 @@ const AdminUsers = () => {
             </tbody>
           </table>
         </div>
+
+        {filteredUsers.length === 0 && (
+          <div className="py-12 text-center">
+            <Users className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+            <p className="text-lg font-medium">Tidak ada user ditemukan</p>
+          </div>
+        )}
       </div>
 
-      {/* Add/Edit Modal */}
-      {showModal && (
+      {/* Edit Role Modal */}
+      {showModal && editingUser && (
         <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="w-full max-w-md bg-card rounded-2xl shadow-xl border border-border animate-scale-in">
             <div className="flex items-center justify-between p-6 border-b border-border">
-              <h2 className="text-xl font-bold">
-                {editingUser ? 'Edit User' : 'Tambah User Baru'}
-              </h2>
+              <h2 className="text-xl font-bold">Edit Role User</h2>
               <button
                 onClick={() => setShowModal(false)}
                 className="p-2 rounded-lg hover:bg-muted"
@@ -202,43 +187,20 @@ const AdminUsers = () => {
             </div>
             <div className="p-6 space-y-4">
               <div>
-                <label className="block text-sm font-medium mb-2">Nama</label>
-                <input
-                  type="text"
-                  defaultValue={editingUser?.name}
-                  placeholder="Nama lengkap"
-                  className="w-full h-12 px-4 rounded-xl bg-input border border-border"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-2">Email</label>
-                <input
-                  type="email"
-                  defaultValue={editingUser?.email}
-                  placeholder="email@example.com"
-                  className="w-full h-12 px-4 rounded-xl bg-input border border-border"
-                />
+                <p className="text-sm text-muted-foreground mb-2">User</p>
+                <p className="font-semibold">{editingUser.name}</p>
               </div>
               <div>
                 <label className="block text-sm font-medium mb-2">Role</label>
                 <select
-                  defaultValue={editingUser?.role || 'kasir'}
+                  value={selectedRole}
+                  onChange={(e) => setSelectedRole(e.target.value as 'admin' | 'kasir')}
                   className="w-full h-12 px-4 rounded-xl bg-input border border-border"
                 >
                   <option value="kasir">Kasir</option>
                   <option value="admin">Admin</option>
                 </select>
               </div>
-              {!editingUser && (
-                <div>
-                  <label className="block text-sm font-medium mb-2">Password</label>
-                  <input
-                    type="password"
-                    placeholder="Password"
-                    className="w-full h-12 px-4 rounded-xl bg-input border border-border"
-                  />
-                </div>
-              )}
             </div>
             <div className="flex gap-3 p-6 border-t border-border">
               <button
@@ -248,13 +210,10 @@ const AdminUsers = () => {
                 Batal
               </button>
               <button
-                onClick={() => {
-                  toast.success(editingUser ? 'User berhasil diperbarui' : 'User berhasil ditambahkan');
-                  setShowModal(false);
-                }}
+                onClick={handleSaveRole}
                 className="flex-1 btn-pos-primary"
               >
-                {editingUser ? 'Simpan' : 'Tambah'}
+                Simpan
               </button>
             </div>
           </div>
