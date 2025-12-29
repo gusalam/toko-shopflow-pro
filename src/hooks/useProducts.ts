@@ -55,6 +55,24 @@ export function useProducts() {
     }
   }, []);
 
+  // Check stock level and show notification
+  const checkStockNotification = useCallback((product: SupabaseProduct, oldStock?: number) => {
+    // Only notify if stock decreased
+    if (oldStock !== undefined && product.stock >= oldStock) return;
+    
+    if (product.stock === 0) {
+      toast.error(`⚠️ STOK HABIS: ${product.name}`, {
+        description: 'Segera lakukan restok!',
+        duration: 8000,
+      });
+    } else if (product.stock <= product.min_stock) {
+      toast.warning(`📦 Stok Menipis: ${product.name}`, {
+        description: `Tersisa ${product.stock} ${product.unit}. Min: ${product.min_stock}`,
+        duration: 6000,
+      });
+    }
+  }, []);
+
   // Initial fetch and real-time subscription
   useEffect(() => {
     fetchProducts();
@@ -73,11 +91,22 @@ export function useProducts() {
           console.log('Product change detected:', payload.eventType);
           
           if (payload.eventType === 'INSERT') {
-            setProducts((prev) => [...prev, payload.new as SupabaseProduct].sort((a, b) => a.name.localeCompare(b.name)));
+            const newProduct = payload.new as SupabaseProduct;
+            setProducts((prev) => [...prev, newProduct].sort((a, b) => a.name.localeCompare(b.name)));
+            // Check if new product has low stock
+            if (newProduct.stock <= newProduct.min_stock) {
+              checkStockNotification(newProduct);
+            }
           } else if (payload.eventType === 'UPDATE') {
+            const updatedProduct = payload.new as SupabaseProduct;
+            const oldProduct = payload.old as { stock?: number };
+            
             setProducts((prev) =>
-              prev.map((p) => (p.id === payload.new.id ? (payload.new as SupabaseProduct) : p))
+              prev.map((p) => (p.id === updatedProduct.id ? updatedProduct : p))
             );
+            
+            // Check stock notification on update
+            checkStockNotification(updatedProduct, oldProduct.stock);
           } else if (payload.eventType === 'DELETE') {
             setProducts((prev) => prev.filter((p) => p.id !== payload.old.id));
           }
@@ -88,7 +117,7 @@ export function useProducts() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [fetchProducts]);
+  }, [fetchProducts, checkStockNotification]);
 
   const getFilteredProducts = useCallback(() => {
     let filtered = products;
