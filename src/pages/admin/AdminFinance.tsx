@@ -39,6 +39,7 @@ const sourceLabels: Record<string, string> = {
 
 const AdminFinance = () => {
   const [filterType, setFilterType] = useState<'all' | 'in' | 'out'>('all');
+  const [filterSource, setFilterSource] = useState<'all' | 'transaction' | 'purchase' | 'manual'>('all');
   const [startDate, setStartDate] = useState<Date | undefined>(undefined);
   const [endDate, setEndDate] = useState<Date | undefined>(undefined);
   const [showModal, setShowModal] = useState(false);
@@ -52,8 +53,9 @@ const AdminFinance = () => {
   const { entries, summary, isLoading, error, refetch, addManualEntry } = useCashBooks(startDate, endDate);
 
   const filteredEntries = entries.filter((e) => {
-    if (filterType === 'all') return true;
-    return e.type === filterType;
+    const typeMatch = filterType === 'all' || e.type === filterType;
+    const sourceMatch = filterSource === 'all' || e.source === filterSource;
+    return typeMatch && sourceMatch;
   });
 
   const handleExportPDF = () => {
@@ -262,45 +264,77 @@ const AdminFinance = () => {
       </div>
 
       {/* Filter */}
-      <div className="flex flex-wrap gap-4 items-center">
-        <div className="flex gap-2 overflow-x-auto">
-          {(['all', 'in', 'out'] as const).map((type) => (
-            <button
-              key={type}
-              onClick={() => setFilterType(type)}
-              className={cn(
-                'px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all flex items-center gap-2',
-                filterType === type
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-muted text-muted-foreground hover:text-foreground'
-              )}
-            >
-              {type === 'all' && <Filter className="w-4 h-4" />}
-              {type === 'in' && <ArrowUpRight className="w-4 h-4" />}
-              {type === 'out' && <ArrowDownRight className="w-4 h-4" />}
-              {type === 'all' ? 'Semua' : type === 'in' ? 'Pemasukan' : 'Pengeluaran'}
-            </button>
-          ))}
+      <div className="flex flex-col gap-4">
+        {/* Filter Tipe */}
+        <div className="flex flex-wrap gap-4 items-center">
+          <span className="text-sm font-medium text-muted-foreground">Tipe:</span>
+          <div className="flex gap-2 overflow-x-auto">
+            {(['all', 'in', 'out'] as const).map((type) => (
+              <button
+                key={type}
+                onClick={() => setFilterType(type)}
+                className={cn(
+                  'px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all flex items-center gap-2',
+                  filterType === type
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-muted text-muted-foreground hover:text-foreground'
+                )}
+              >
+                {type === 'all' && <Filter className="w-4 h-4" />}
+                {type === 'in' && <ArrowUpRight className="w-4 h-4" />}
+                {type === 'out' && <ArrowDownRight className="w-4 h-4" />}
+                {type === 'all' ? 'Semua' : type === 'in' ? 'Pemasukan' : 'Pengeluaran'}
+              </button>
+            ))}
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Calendar className="w-4 h-4 text-muted-foreground" />
-          <DateRangePicker
-            startDate={startDate}
-            endDate={endDate}
-            onStartDateChange={setStartDate}
-            onEndDateChange={setEndDate}
-          />
-          {(startDate || endDate) && (
-            <button
-              onClick={() => {
-                setStartDate(undefined);
-                setEndDate(undefined);
-              }}
-              className="px-3 py-1.5 rounded-lg bg-muted text-muted-foreground hover:text-foreground text-sm"
-            >
-              Reset
-            </button>
-          )}
+
+        {/* Filter Sumber */}
+        <div className="flex flex-wrap gap-4 items-center">
+          <span className="text-sm font-medium text-muted-foreground">Sumber:</span>
+          <div className="flex gap-2 overflow-x-auto">
+            {(['all', 'transaction', 'purchase', 'manual'] as const).map((source) => (
+              <button
+                key={source}
+                onClick={() => setFilterSource(source)}
+                className={cn(
+                  'px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all',
+                  filterSource === source
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-muted text-muted-foreground hover:text-foreground'
+                )}
+              >
+                {source === 'all' ? 'Semua Sumber' : sourceLabels[source]}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Filter Tanggal */}
+        <div className="flex flex-wrap gap-4 items-center">
+          <span className="text-sm font-medium text-muted-foreground">Tanggal:</span>
+          <div className="flex items-center gap-2">
+            <Calendar className="w-4 h-4 text-muted-foreground" />
+            <DateRangePicker
+              startDate={startDate}
+              endDate={endDate}
+              onStartDateChange={setStartDate}
+              onEndDateChange={setEndDate}
+            />
+            {(startDate || endDate || filterType !== 'all' || filterSource !== 'all') && (
+              <button
+                onClick={() => {
+                  setStartDate(undefined);
+                  setEndDate(undefined);
+                  setFilterType('all');
+                  setFilterSource('all');
+                }}
+                className="px-3 py-1.5 rounded-lg bg-muted text-muted-foreground hover:text-foreground text-sm"
+              >
+                Reset Semua
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
