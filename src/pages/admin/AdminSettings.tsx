@@ -1,20 +1,49 @@
-import { useState } from 'react';
-import { Settings, Store, Percent, Printer, Database, Save, Check } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Settings, Store, Percent, Printer, Database, Save, Bluetooth, Loader2, RefreshCw, Check, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { usePrinter } from '@/hooks/usePrinter';
+import { cn } from '@/lib/utils';
 
 const AdminSettings = () => {
   const [storeSettings, setStoreSettings] = useState({
-    name: 'TokoSembako',
+    name: 'TOKO SEMBAKO',
     address: 'Jl. Raya Utama No. 123, Jakarta',
     phone: '021-12345678',
     taxRate: 0,
     defaultDiscount: 0,
-    printerEnabled: true,
   });
 
+  const {
+    isScanning,
+    isPrinting,
+    isConnected,
+    connectedDevice,
+    availableDevices,
+    settings: printerSettings,
+    isNative,
+    scanDevices,
+    connectDevice,
+    disconnectDevice,
+    updateSettings,
+    testPrint,
+  } = usePrinter();
+
   const handleSave = () => {
+    localStorage.setItem('store_settings', JSON.stringify(storeSettings));
     toast.success('Pengaturan berhasil disimpan');
   };
+
+  // Load saved store settings
+  useEffect(() => {
+    const saved = localStorage.getItem('store_settings');
+    if (saved) {
+      try {
+        setStoreSettings(JSON.parse(saved));
+      } catch (e) {
+        console.error('Error loading store settings:', e);
+      }
+    }
+  }, []);
 
   return (
     <div className="p-4 lg:p-6 space-y-6">
@@ -67,6 +96,162 @@ const AdminSettings = () => {
           </div>
         </div>
 
+        {/* Bluetooth Printer */}
+        <div className="stat-card">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-10 h-10 rounded-xl bg-success/20 flex items-center justify-center">
+              <Bluetooth className="w-5 h-5 text-success" />
+            </div>
+            <div>
+              <h3 className="font-semibold">Printer Bluetooth</h3>
+              <p className="text-sm text-muted-foreground">Pengaturan printer thermal</p>
+            </div>
+          </div>
+          
+          {/* Connection Status */}
+          <div className={cn(
+            "p-4 rounded-xl mb-4",
+            isConnected ? "bg-success/10 border border-success/30" : "bg-muted/30"
+          )}>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium flex items-center gap-2">
+                  {isConnected ? (
+                    <>
+                      <Check className="w-4 h-4 text-success" />
+                      Terhubung
+                    </>
+                  ) : (
+                    <>
+                      <X className="w-4 h-4 text-muted-foreground" />
+                      Tidak Terhubung
+                    </>
+                  )}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  {isConnected && connectedDevice ? connectedDevice.name : 'Pilih printer untuk menghubungkan'}
+                </p>
+              </div>
+              {isConnected && (
+                <button
+                  onClick={disconnectDevice}
+                  className="px-3 py-1.5 rounded-lg bg-destructive/20 text-destructive text-sm"
+                >
+                  Putuskan
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Paper Width */}
+          <div className="mb-4">
+            <label className="block text-sm font-medium mb-2">Lebar Kertas</label>
+            <div className="flex gap-2">
+              {(['58mm', '80mm'] as const).map((width) => (
+                <button
+                  key={width}
+                  onClick={() => updateSettings({ paperWidth: width })}
+                  className={cn(
+                    "flex-1 py-2 rounded-xl font-medium transition-colors",
+                    printerSettings.paperWidth === width
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted text-muted-foreground"
+                  )}
+                >
+                  {width}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Auto Cut Toggle */}
+          <div className="flex items-center justify-between p-4 rounded-xl bg-muted/30 mb-4">
+            <div>
+              <p className="font-medium">Auto Cut Paper</p>
+              <p className="text-sm text-muted-foreground">Potong kertas otomatis setelah cetak</p>
+            </div>
+            <button
+              onClick={() => updateSettings({ autoCut: !printerSettings.autoCut })}
+              className={cn(
+                "w-14 h-8 rounded-full transition-colors relative",
+                printerSettings.autoCut ? "bg-primary" : "bg-muted"
+              )}
+            >
+              <div className={cn(
+                "absolute top-1 w-6 h-6 rounded-full bg-white transition-transform",
+                printerSettings.autoCut ? "left-7" : "left-1"
+              )} />
+            </button>
+          </div>
+
+          {/* Scan & Connect */}
+          {isNative && (
+            <div className="space-y-3">
+              <button
+                onClick={scanDevices}
+                disabled={isScanning}
+                className="w-full h-12 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+              >
+                {isScanning ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Mencari Printer...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="w-4 h-4" />
+                    Scan Printer Bluetooth
+                  </>
+                )}
+              </button>
+
+              {/* Device List */}
+              {availableDevices.length > 0 && (
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {availableDevices.map((device) => (
+                    <button
+                      key={device.id}
+                      onClick={() => connectDevice(device)}
+                      className="w-full p-3 rounded-xl bg-muted/50 hover:bg-muted text-left flex items-center justify-between"
+                    >
+                      <div>
+                        <p className="font-medium">{device.name}</p>
+                        <p className="text-xs text-muted-foreground">{device.address}</p>
+                      </div>
+                      <Bluetooth className="w-4 h-4 text-muted-foreground" />
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {!isNative && (
+            <p className="text-sm text-muted-foreground text-center py-4">
+              Fitur printer Bluetooth hanya tersedia di aplikasi Android
+            </p>
+          )}
+
+          {/* Test Print */}
+          <button
+            onClick={testPrint}
+            disabled={isPrinting}
+            className="w-full h-12 mt-4 rounded-xl bg-muted hover:bg-muted/80 transition-colors flex items-center justify-center gap-2"
+          >
+            {isPrinting ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Mencetak...
+              </>
+            ) : (
+              <>
+                <Printer className="w-4 h-4" />
+                Test Print
+              </>
+            )}
+          </button>
+        </div>
+
         {/* Tax & Discount */}
         <div className="stat-card">
           <div className="flex items-center gap-3 mb-6">
@@ -105,43 +290,6 @@ const AdminSettings = () => {
           </div>
         </div>
 
-        {/* Printer */}
-        <div className="stat-card">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-10 h-10 rounded-xl bg-success/20 flex items-center justify-center">
-              <Printer className="w-5 h-5 text-success" />
-            </div>
-            <div>
-              <h3 className="font-semibold">Printer Struk</h3>
-              <p className="text-sm text-muted-foreground">Pengaturan printer thermal</p>
-            </div>
-          </div>
-          <div className="space-y-4">
-            <div className="flex items-center justify-between p-4 rounded-xl bg-muted/30">
-              <div>
-                <p className="font-medium">Cetak Struk Otomatis</p>
-                <p className="text-sm text-muted-foreground">Cetak struk setelah transaksi selesai</p>
-              </div>
-              <button
-                onClick={() => setStoreSettings({ ...storeSettings, printerEnabled: !storeSettings.printerEnabled })}
-                className={`w-14 h-8 rounded-full transition-colors relative ${
-                  storeSettings.printerEnabled ? 'bg-primary' : 'bg-muted'
-                }`}
-              >
-                <div
-                  className={`absolute top-1 w-6 h-6 rounded-full bg-white transition-transform ${
-                    storeSettings.printerEnabled ? 'left-7' : 'left-1'
-                  }`}
-                />
-              </button>
-            </div>
-            <button className="w-full h-12 rounded-xl bg-muted hover:bg-muted/80 transition-colors flex items-center justify-center gap-2">
-              <Printer className="w-4 h-4" />
-              <span>Test Print</span>
-            </button>
-          </div>
-        </div>
-
         {/* Backup */}
         <div className="stat-card">
           <div className="flex items-center gap-3 mb-6">
@@ -149,41 +297,22 @@ const AdminSettings = () => {
               <Database className="w-5 h-5 text-warning" />
             </div>
             <div>
-              <h3 className="font-semibold">Backup & Restore</h3>
-              <p className="text-sm text-muted-foreground">Kelola data aplikasi</p>
+              <h3 className="font-semibold">Data & Backup</h3>
+              <p className="text-sm text-muted-foreground">Data tersimpan di Supabase cloud</p>
             </div>
           </div>
-          <div className="space-y-4">
-            <div className="p-4 rounded-xl bg-muted/30">
-              <p className="text-sm text-muted-foreground">Backup terakhir:</p>
-              <p className="font-medium">28 Desember 2024, 08:00</p>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                onClick={() => toast.success('Backup dimulai...')}
-                className="h-12 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 transition-colors flex items-center justify-center gap-2"
-              >
-                <Database className="w-4 h-4" />
-                <span>Backup</span>
-              </button>
-              <button
-                onClick={() => toast.info('Pilih file backup untuk restore')}
-                className="h-12 rounded-xl bg-muted hover:bg-muted/80 transition-colors flex items-center justify-center gap-2"
-              >
-                <Database className="w-4 h-4" />
-                <span>Restore</span>
-              </button>
-            </div>
+          <div className="p-4 rounded-xl bg-muted/30">
+            <p className="text-sm text-muted-foreground">
+              Semua data transaksi, produk, dan pelanggan tersimpan secara real-time di cloud Supabase. 
+              Data aman dan dapat diakses dari perangkat manapun.
+            </p>
           </div>
         </div>
       </div>
 
       {/* Save Button */}
       <div className="flex justify-end">
-        <button
-          onClick={handleSave}
-          className="btn-pos-primary flex items-center gap-2"
-        >
+        <button onClick={handleSave} className="btn-pos-primary flex items-center gap-2">
           <Save className="w-5 h-5" />
           <span>Simpan Pengaturan</span>
         </button>
