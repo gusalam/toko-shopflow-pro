@@ -17,6 +17,7 @@ const AdminSettings = () => {
     isScanning,
     isPrinting,
     isConnected,
+    isAutoConnecting,
     connectedDevice,
     availableDevices,
     settings: printerSettings,
@@ -111,12 +112,18 @@ const AdminSettings = () => {
           {/* Connection Status */}
           <div className={cn(
             "p-4 rounded-xl mb-4",
+            isAutoConnecting ? "bg-warning/10 border border-warning/30" : 
             isConnected ? "bg-success/10 border border-success/30" : "bg-muted/30"
           )}>
             <div className="flex items-center justify-between">
               <div>
                 <p className="font-medium flex items-center gap-2">
-                  {isConnected ? (
+                  {isAutoConnecting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-warning" />
+                      Menghubungkan Otomatis...
+                    </>
+                  ) : isConnected ? (
                     <>
                       <Check className="w-4 h-4 text-success" />
                       Terhubung
@@ -129,7 +136,8 @@ const AdminSettings = () => {
                   )}
                 </p>
                 <p className="text-sm text-muted-foreground">
-                  {isConnected && connectedDevice ? connectedDevice.name : 'Pilih printer untuk menghubungkan'}
+                  {isAutoConnecting ? 'Mencoba terhubung ke printer terakhir...' :
+                   isConnected && connectedDevice ? connectedDevice.name : 'Pilih printer untuk menghubungkan'}
                 </p>
               </div>
               {isConnected && (
@@ -162,6 +170,26 @@ const AdminSettings = () => {
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* Auto Connect Toggle */}
+          <div className="flex items-center justify-between p-4 rounded-xl bg-muted/30 mb-4">
+            <div>
+              <p className="font-medium">Auto Connect</p>
+              <p className="text-sm text-muted-foreground">Hubungkan otomatis saat aplikasi dibuka</p>
+            </div>
+            <button
+              onClick={() => updateSettings({ autoConnect: !printerSettings.autoConnect })}
+              className={cn(
+                "w-14 h-8 rounded-full transition-colors relative",
+                printerSettings.autoConnect ? "bg-primary" : "bg-muted"
+              )}
+            >
+              <div className={cn(
+                "absolute top-1 w-6 h-6 rounded-full bg-white transition-transform",
+                printerSettings.autoConnect ? "left-7" : "left-1"
+              )} />
+            </button>
           </div>
 
           {/* Auto Cut Toggle */}
