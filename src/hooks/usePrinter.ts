@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   printerService, 
   BluetoothDevice, 
@@ -15,6 +15,7 @@ export interface UsePrinterReturn {
   isScanning: boolean;
   isPrinting: boolean;
   isConnected: boolean;
+  isAutoConnecting: boolean;
   connectedDevice: BluetoothDevice | null;
   availableDevices: BluetoothDevice[];
   settings: PrinterSettings;
@@ -33,10 +34,54 @@ export const usePrinter = (): UsePrinterReturn => {
   const [isScanning, setIsScanning] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
+  const [isAutoConnecting, setIsAutoConnecting] = useState(false);
   const [connectedDevice, setConnectedDevice] = useState<BluetoothDevice | null>(null);
   const [availableDevices, setAvailableDevices] = useState<BluetoothDevice[]>([]);
   const [settings, setSettings] = useState<PrinterSettings>(getPrinterSettings());
   const [isNative] = useState(isNativePlatform());
+  const autoConnectAttempted = useRef(false);
+
+  // Auto-connect to last used printer on mount
+  useEffect(() => {
+    const autoConnect = async () => {
+      // Only attempt once and only on native platform
+      if (autoConnectAttempted.current || !isNative) return;
+      autoConnectAttempted.current = true;
+
+      const savedSettings = getPrinterSettings();
+      
+      // Check if auto-connect is enabled and we have a saved device
+      if (!savedSettings.autoConnect || !savedSettings.deviceAddress) {
+        return;
+      }
+
+      setIsAutoConnecting(true);
+      
+      try {
+        const device: BluetoothDevice = {
+          id: savedSettings.deviceId || savedSettings.deviceAddress,
+          name: savedSettings.deviceName || 'Printer',
+          address: savedSettings.deviceAddress,
+        };
+
+        console.log('Auto-connecting to printer:', device.name);
+        
+        const success = await printerService.connect(device);
+        if (success) {
+          setIsConnected(true);
+          setConnectedDevice(device);
+          toast.success(`Terhubung otomatis ke ${device.name}`);
+        }
+      } catch (error) {
+        console.error('Auto-connect failed:', error);
+        // Silent fail for auto-connect - don't show error toast
+      } finally {
+        setIsAutoConnecting(false);
+      }
+    };
+
+    autoConnect();
+  }, [isNative]);
 
   // Check connection status on mount
   useEffect(() => {
@@ -150,6 +195,7 @@ export const usePrinter = (): UsePrinterReturn => {
     isScanning,
     isPrinting,
     isConnected,
+    isAutoConnecting,
     connectedDevice,
     availableDevices,
     settings,
