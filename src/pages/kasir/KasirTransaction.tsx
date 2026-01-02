@@ -3,10 +3,12 @@ import { useProducts, SupabaseProduct } from '@/hooks/useProducts';
 import { useCartStore } from '@/store/useCartStore';
 import { useAuthStore } from '@/store/useAuthStore';
 import { createTransaction, PaymentMethod } from '@/lib/transactionService';
-import { Search, Plus, Minus, Trash2, CreditCard, Banknote, QrCode, X, Printer, Check, ShoppingCart, Loader2 } from 'lucide-react';
+import { Search, Plus, Minus, Trash2, CreditCard, Banknote, QrCode, X, Printer, Check, ShoppingCart, Loader2, Bluetooth, BluetoothOff } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
-import { printReceipt, generateTransactionId } from '@/lib/receiptUtils';
+import { generateTransactionId } from '@/lib/receiptUtils';
+import { usePrinter } from '@/hooks/usePrinter';
+import { ReceiptPrintData } from '@/lib/bluetoothPrinter';
 
 const formatCurrency = (value: number) => {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(value);
@@ -36,6 +38,9 @@ const KasirTransaction = () => {
   const [currentTransactionId, setCurrentTransactionId] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
+  
+  // Bluetooth Printer
+  const { isConnected: isPrinterConnected, isPrinting, printReceipt: printBluetoothReceipt, isNative } = usePrinter();
 
   const filteredProducts = getFilteredProducts();
   const categories = getCategories();
@@ -130,23 +135,36 @@ const KasirTransaction = () => {
     }
   };
 
-  const finishTransaction = (print: boolean) => {
+  const finishTransaction = async (print: boolean) => {
     if (print) {
-      printReceipt({
-        transactionId: currentTransactionId,
+      const receiptData: ReceiptPrintData = {
+        storeName: 'TOKO SEMBAKO',
+        storeAddress: 'Jl. Raya No. 123',
+        storePhone: '(021) 1234567',
+        invoice: currentTransactionId,
         date: new Date(),
         cashierName: user?.name || 'Kasir',
-        items,
+        items: items.map(item => ({
+          name: item.product.name,
+          qty: item.quantity,
+          price: item.product.sell_price,
+          subtotal: item.subtotal,
+        })),
         subtotal: getSubtotal(),
-        itemsDiscount: getItemsDiscount(),
-        cartDiscount: getCartDiscount(),
+        discount: getItemsDiscount() + getCartDiscount(),
         tax: 0,
         total,
         paymentMethod,
-        amountPaid: Number(amountPaid),
+        paidAmount: Number(amountPaid),
         change: paymentMethod === 'cash' ? change : 0,
-      });
-      toast.success('Struk sedang dicetak...');
+      };
+
+      try {
+        await printBluetoothReceipt(receiptData);
+      } catch (error) {
+        console.error('Print error:', error);
+        // Error already shown by usePrinter hook
+      }
     }
     clearCart();
     setShowReceipt(false);
@@ -478,19 +496,43 @@ const KasirTransaction = () => {
               )}
             </div>
 
+            {/* Printer Status */}
+            <div className={cn(
+              "flex items-center justify-center gap-2 py-2 px-4 rounded-lg text-xs mb-4",
+              isPrinterConnected ? "bg-success/20 text-success" : "bg-muted text-muted-foreground"
+            )}>
+              {isPrinterConnected ? (
+                <>
+                  <Bluetooth className="w-3 h-3" />
+                  <span>Printer Terhubung</span>
+                </>
+              ) : (
+                <>
+                  <BluetoothOff className="w-3 h-3" />
+                  <span>{isNative ? 'Printer Tidak Terhubung' : 'Cetak via Browser'}</span>
+                </>
+              )}
+            </div>
+
             <div className="flex gap-3">
               <button
                 onClick={() => finishTransaction(false)}
-                className="flex-1 h-12 rounded-xl bg-muted text-foreground font-semibold hover:bg-muted/80 transition-all"
+                disabled={isPrinting}
+                className="flex-1 h-12 rounded-xl bg-muted text-foreground font-semibold hover:bg-muted/80 transition-all disabled:opacity-50"
               >
                 Selesai
               </button>
               <button
                 onClick={() => finishTransaction(true)}
-                className="flex-1 h-12 rounded-xl bg-primary text-primary-foreground font-semibold flex items-center justify-center gap-2 hover:bg-primary/90 transition-all"
+                disabled={isPrinting}
+                className="flex-1 h-12 rounded-xl bg-primary text-primary-foreground font-semibold flex items-center justify-center gap-2 hover:bg-primary/90 transition-all disabled:opacity-50"
               >
-                <Printer className="w-4 h-4" />
-                Cetak
+                {isPrinting ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Printer className="w-4 h-4" />
+                )}
+                {isPrinting ? 'Mencetak...' : 'Cetak Struk'}
               </button>
             </div>
           </div>
