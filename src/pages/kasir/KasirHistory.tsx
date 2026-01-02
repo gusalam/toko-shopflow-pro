@@ -16,10 +16,15 @@ import {
   Download,
   Filter,
   ChevronDown,
-  Loader2
+  Loader2,
+  Bluetooth,
+  BluetoothOff
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { usePrinter } from '@/hooks/usePrinter';
+import { ReceiptPrintData } from '@/lib/bluetoothPrinter';
+import { cn } from '@/lib/utils';
 
 const formatCurrency = (value: number) => {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(value);
@@ -33,7 +38,11 @@ const KasirHistory = () => {
   const [filterStatus, setFilterStatus] = useState<'all' | 'success' | 'refunded'>('all');
   const [filterPayment, setFilterPayment] = useState<string>('all');
   const [showFilters, setShowFilters] = useState(false);
+  const [isPrintingId, setIsPrintingId] = useState<string | null>(null);
   const receiptRef = useRef<HTMLDivElement>(null);
+  
+  // Bluetooth Printer
+  const { isConnected: isPrinterConnected, isPrinting, printReceipt: printBluetoothReceipt, isNative } = usePrinter();
 
   const filteredTransactions = transactions.filter((tx) => {
     const matchesSearch = tx.invoice.toLowerCase().includes(searchQuery.toLowerCase());
@@ -42,53 +51,39 @@ const KasirHistory = () => {
     return matchesSearch && matchesStatus && matchesPayment;
   });
 
-  const handlePrintReceipt = (tx: Transaction) => {
-    setSelectedTransaction(tx);
-    setTimeout(() => {
-      const printContent = receiptRef.current;
-      if (printContent) {
-        const printWindow = window.open('', '_blank');
-        if (printWindow) {
-          printWindow.document.write(`
-            <html>
-              <head>
-                <title>Struk - ${tx.invoice}</title>
-                <style>
-                  body { 
-                    font-family: 'Courier New', monospace; 
-                    padding: 20px; 
-                    max-width: 300px; 
-                    margin: 0 auto;
-                    font-size: 12px;
-                  }
-                  .header { text-align: center; margin-bottom: 20px; }
-                  .header h1 { font-size: 18px; margin: 0; }
-                  .header p { margin: 4px 0; color: #666; }
-                  .divider { border-top: 1px dashed #ccc; margin: 12px 0; }
-                  .row { display: flex; justify-content: space-between; margin: 4px 0; }
-                  .item { margin: 8px 0; }
-                  .item-name { font-weight: bold; }
-                  .item-detail { color: #666; font-size: 11px; }
-                  .total { font-size: 16px; font-weight: bold; }
-                  .footer { text-align: center; margin-top: 20px; color: #666; }
-                  @media print {
-                    body { padding: 0; }
-                  }
-                </style>
-              </head>
-              <body>
-                ${printContent.innerHTML}
-              </body>
-            </html>
-          `);
-          printWindow.document.close();
-          printWindow.focus();
-          printWindow.print();
-          printWindow.close();
-        }
-      }
-      toast.success('Struk berhasil dicetak');
-    }, 100);
+  const handlePrintReceipt = async (tx: Transaction) => {
+    setIsPrintingId(tx.id);
+    
+    // Build receipt data
+    const receiptData: ReceiptPrintData = {
+      storeName: 'TOKO SEMBAKO',
+      storeAddress: 'Jl. Raya No. 123',
+      storePhone: '(021) 1234567',
+      invoice: tx.invoice,
+      date: new Date(tx.created_at),
+      cashierName: user?.name || 'Kasir',
+      items: tx.items?.map(item => ({
+        name: item.product_name,
+        qty: item.qty,
+        price: item.price,
+        subtotal: item.subtotal,
+      })) || [],
+      subtotal: tx.subtotal,
+      discount: tx.discount,
+      tax: tx.tax,
+      total: tx.total,
+      paymentMethod: tx.payment_method,
+      paidAmount: tx.paid_amount,
+      change: tx.change_amount,
+    };
+
+    try {
+      await printBluetoothReceipt(receiptData);
+    } catch (error) {
+      console.error('Print error:', error);
+    } finally {
+      setIsPrintingId(null);
+    }
   };
 
   const getStatusBadge = (status: string) => {
@@ -147,6 +142,24 @@ const KasirHistory = () => {
           <p className="text-muted-foreground">
             {filteredTransactions.length} transaksi ditemukan
           </p>
+        </div>
+        
+        {/* Printer Status */}
+        <div className={cn(
+          "flex items-center gap-2 px-4 py-2 rounded-lg text-sm",
+          isPrinterConnected ? "bg-success/20 text-success" : "bg-muted text-muted-foreground"
+        )}>
+          {isPrinterConnected ? (
+            <>
+              <Bluetooth className="w-4 h-4" />
+              <span>Printer Terhubung</span>
+            </>
+          ) : (
+            <>
+              <BluetoothOff className="w-4 h-4" />
+              <span>{isNative ? 'Printer Tidak Terhubung' : 'Cetak via Browser'}</span>
+            </>
+          )}
         </div>
       </div>
 
@@ -283,10 +296,15 @@ const KasirHistory = () => {
                   </button>
                   <button 
                     onClick={() => handlePrintReceipt(tx)} 
-                    className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                    disabled={isPrintingId === tx.id}
+                    className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-50"
                   >
-                    <Printer className="w-4 h-4" />
-                    <span className="text-sm font-medium">Cetak</span>
+                    {isPrintingId === tx.id ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Printer className="w-4 h-4" />
+                    )}
+                    <span className="text-sm font-medium">{isPrintingId === tx.id ? 'Mencetak...' : 'Cetak'}</span>
                   </button>
                 </div>
               </div>
@@ -405,10 +423,15 @@ const KasirHistory = () => {
               <div className="flex gap-3">
                 <button
                   onClick={() => handlePrintReceipt(selectedTransaction)}
-                  className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-colors"
+                  disabled={isPrinting}
+                  className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
                 >
-                  <Printer className="w-5 h-5" />
-                  Cetak Ulang Struk
+                  {isPrinting ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : (
+                    <Printer className="w-5 h-5" />
+                  )}
+                  {isPrinting ? 'Mencetak...' : 'Cetak Ulang Struk'}
                 </button>
               </div>
             </div>
